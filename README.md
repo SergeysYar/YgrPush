@@ -1,153 +1,241 @@
 # Shampoo Quality Forecast
 
-MVP системы прогнозирования конечного качества шампуня по технологическим этапам варки.
+MVP системы прогнозирования конечного качества шампуня по данным технологических этапов варки.
+
+Проект строит признаки по завершённым и промежуточным этапам варки, извлекает лабораторные целевые значения из `production.db`, обучает базовые ML-модели и предоставляет CLI, API и заготовку dashboard-интерфейса.
 
 ## Назначение
 
-Система предназначена для предварительного прогноза итоговых показателей качества продукта до получения лабораторного протокола:
+Система предназначена для предварительного прогноза показателей качества до получения лабораторного протокола:
 
-- итоговый pH;
-- итоговую вязкость;
-- итоговое содержание хлоридов.
+- итоговый `pH`
+- итоговая `вязкость`
+- итоговое `содержание хлоридов`
 
-Прогноз обновляется по мере появления новых этапов текущей варки и носит рекомендательный характер.
+Прогноз носит рекомендательный характер и не заменяет лабораторный контроль.
+
+## Что уже реализовано
+
+- чтение производственной SQLite-базы в режиме read-only
+- извлечение batch-, product- и protocol-данных
+- парсинг чисел с запятой и точкой
+- базовая проверка качества данных
+- batch-level и snapshot-level feature engineering
+- snapshot-based training dataset без утечки будущих этапов
+- `Baseline`, `Ridge`, `PLS`, `BayesianRidge`
+- групповая валидация `LeaveOneGroupOut` по `batch_id`
+- weighted training/validation для snapshot-режима
+- хранение моделей и прогнозов в `ml_storage.db`
+- FastAPI endpoints для summary, batches, train, predict, models, reports
+- CLI-команды для инспекции БД, обучения, предикта и запуска API/dashboard
 
 ## Архитектура
 
-Проект разделен на:
+- `app/config.py` — конфигурация через `.env`
+- `app/database/` — доступ к SQLite и хранение ML-артефактов
+- `app/data/` — очистка, целевые значения, dataset builder
+- `app/features/` — batch и snapshot признаки
+- `app/ml/` — модели, валидация, pipeline, prediction service
+- `app/api/` — FastAPI
+- `app/dashboard/` — Streamlit-заготовка
+- `tests/` — unit/integration-style тесты для ключевых модулей
 
-- `app/config.py` — конфигурация через переменные окружения;
-- `app/database/` — доступ к `production.db` и хранение ML артефактов в `ml_storage.db`;
-- `app/data/` — очистка, парсинг и загрузка целевых значений;
-- `app/features/` — построение признаков для варок и снимков;
-- `app/ml/` — модели Baseline, Ridge, PLS, BayesianRidge и ансамбль;
-- `app/api/` — FastAPI для производства прогнозов и управления моделями;
-- `app/dashboard/` — Streamlit интерфейс технолога.
-
-## Схема движения данных
+## Поток данных
 
 1. `production.db` читается только для чтения.
-2. Данные этапов варки нормализуются и очищаются.
-3. Целевые значения получают из `testing_protocol_values` и `Testing_Protocols`.
-4. Обученные модели и прогнозы сохраняются в `ml_storage.db`.
+2. Таблица `measurements` очищается и нормализуется.
+3. Для batch'ей подтягиваются связанные данные из `Batches`, `Products`, `Loading_Process`, `Testing_Protocols`.
+4. Из лабораторных таблиц извлекаются target-значения.
+5. Строятся:
+   - итоговые признаки по всей варке
+   - промежуточные snapshot-признаки по мере выполнения этапов
+6. Модели обучаются и сохраняются в `ml_storage.db` и `artifacts/`.
+7. API и CLI используют обученные модели для предсказаний.
+
+## Требования
+
+- Python `3.12`
+- SQLite база `production.db`
+
+Основные зависимости описаны в `pyproject.toml`.
 
 ## Установка
-
-1. Скопируйте `.env.example` в `.env`.
-2. Установите зависимости:
 
 ```bash
 python -m pip install --upgrade pip
 pip install -e .
 ```
 
-3. Убедитесь, что `production.db` находится рядом с проектом или путь указан в `DB_PATH`.
+Затем скопируйте `.env.example` в `.env` и при необходимости поправьте пути.
 
-## Запуск
+## Конфигурация
 
-- Инспектировать базу:
+Основные настройки:
+
+```env
+DB_PATH=./production.db
+ML_STORAGE_PATH=./ml_storage.db
+TARGET_PROTOCOL_POLICY=latest
+CONFIDENCE_HIGH_MIN_BATCHES=20
+```
+
+## CLI
+
+Доступные команды:
 
 ```bash
 python -m app.cli inspect-db
-```
-
-- Построить датасет и посмотреть статистику:
-
-```bash
 python -m app.cli build-dataset
-```
-
-- Валидировать данные:
-
-```bash
 python -m app.cli validate-data
-```
-
-- Запустить API:
-
-```bash
+python -m app.cli train
+python -m app.cli evaluate
+python -m app.cli predict --batch-id 89
+python -m app.cli predict --batch-id 89 --up-to-step 4
+python -m app.cli list-models
+python -m app.cli promote-model MODEL_ID
+python -m app.cli update-actuals
 python -m app.cli run-api
-```
-
-- Запустить Streamlit:
-
-```bash
 python -m app.cli run-dashboard
 ```
 
-- Обновить актуальные значения для сохранённых прогнозов:
+`train` и `evaluate` сейчас запускают pipeline в `snapshot_mode=True`.
+
+## API
+
+Основные маршруты:
+
+- `GET /health`
+- `GET /api/v1/data/summary`
+- `GET /api/v1/batches`
+- `GET /api/v1/batches/{batch_id}`
+- `POST /api/v1/train`
+- `GET /api/v1/models`
+- `POST /api/v1/models/{model_id}/promote`
+- `POST /api/v1/predict/batch/{batch_id}`
+- `POST /api/v1/predict/custom`
+- `GET /api/v1/predictions`
+- `GET /api/v1/reports/data-quality`
+
+### Пример обучения
 
 ```bash
-python -m app.cli update-actuals
+curl -X POST http://127.0.0.1:8000/api/v1/train ^
+  -H "Content-Type: application/json" ^
+  -d "{\"model_types\":[\"baseline\",\"ridge\",\"pls\",\"bayesian_ridge\"],\"protocol_policy\":\"latest\",\"snapshot_mode\":true}"
 ```
 
-## Запустить обучение моделей (Stage 5):
+### Пример предсказания
 
 ```bash
-python -m app.cli train
+curl -X POST "http://127.0.0.1:8000/api/v1/predict/batch/89?up_to_step_order=4"
 ```
 
-Результаты сохраняются в `reports/cv_report.json`.
+Ответ включает:
+
+- checkpoint-информацию
+- data quality summary
+- predictions по `ph`, `viscosity`, `chlorides`
+- `status`
+- `confidence`
+- `training_batches`
+- `top_factors`
+- `similar_batches`
 
 ## Таблицы-источники
 
-- `measurements` — шаги варки;
-- `Batches` — партии;
-- `Products` — характеристики продукта;
-- `Components` — компоненты;
-- `Loading_Process` — порядок этапов;
-- `Testing_Protocols` и `testing_protocol_values` — лабораторные результаты;
-- `quality_targets` — нормативы по показателям.
+Используются следующие таблицы:
 
-## Правила формирования целей
-
-- Первичный источник — `testing_protocol_values`;
-- Вторичный — текстовые поля из `Testing_Protocols`;
-- Политика выбора протокола задается переменной `TARGET_PROTOCOL_POLICY`.
+- `measurements`
+- `Batches`
+- `Products`
+- `Loading_Process`
+- `Testing_Protocols`
+- `testing_protocol_values`
+- `quality_targets`
 
 ## Модели
 
-- Baseline — среднее по обучающим варкам и по категории продукта;
-- Ridge — регуляризованная регрессия с обработкой категорий;
-- PLS — многовыходная модель для полных наборов целей;
-- BayesianRidge — модель с оценкой неопределенности;
-- CatBoost — подключается опционно при наличии пакета и достаточных данных.
+### Baseline
 
-## Ограничения текущей выборки
+- среднее по обучающей выборке
+- поддерживает weighted learning для snapshot-режима
 
-## Валидация (Stage 5)
+### Ridge
 
-Используется LeaveOneGroupOut кросс-валидация с группировкой по `batch_id`:
+- основной интерпретируемый baseline-уровень
+- поддерживает объяснение top factors через вклады коэффициентов
 
-- Все снимки одной варки остаются в одной группе (train или test).
-- Каждая варка используется один раз как тестовое множество.
-- Метрики: MAE, RMSE, Median AE, R².
+### PLS
 
-Результаты хранятся в `reports/cv_report.json`.
+- многовыходная модель для полного набора целей
+- пока используется в упрощённом режиме
 
-## Ограничения текущей выборки
+### BayesianRidge
 
-На начальном этапе данных может быть мало для надежных моделей. Прогнозы считаются предварительными и требуют проверки на новых варках.
+- даёт прогноз и используется для более узкого интервала, где возможно
 
-## Примеры API
+## Валидация
 
-- `GET /health`
-- `GET /api/v1/batches`
-- `POST /api/v1/predict/batch/{batch_id}`
-- `GET /api/v1/predictions?batch_id={batch_id}`
+Используется `LeaveOneGroupOut` по `batch_id`.
 
-## Переобучение
+Это означает:
 
-Запускается командой:
+- все snapshots одной варки попадают только в train или только в test
+- утечка информации между этапами одной варки исключается на уровне split-логики
+- snapshot weights уменьшают дисбаланс длинных варок
 
-```bash
-python -m app.cli train
-```
+Метрики:
+
+- `MAE`
+- `RMSE`
+- `Median AE`
+- `R²`
+
+## Ограничения текущей реализации
+
+На июль 2026 года проект реализован как рабочий инженерный MVP, но не все пункты исходного промышленного промта закрыты полностью.
+
+Честные ограничения текущей версии:
+
+- `CatBoost` и `SHAP` не доведены до production-ready состояния
+- `Streamlit` пока остаётся заготовкой
+- часть feature engineering всё ещё упрощена по сравнению с полным промтом
+- `PLS` пока валидируется и используется в более простом режиме, чем задумывалось
+- `top_factors` полноценно реализованы прежде всего для `Ridge`
+- не все API-контракты из промта доведены до окончательной версии
+- README описывает фактическую реализацию, а не идеальную целевую архитектуру
 
 ## Champion–Challenger
 
-Модели регистрируются в `ml_storage.db`. Новые модели получают статус `challenger`, а назначение `champion` выполняется вручную.
+Модели сохраняются в `ml_storage.db`.
 
-## Предупреждение
+- новые модели получают статус `challenger`
+- champion назначается вручную
+- доступно через:
 
-На текущем объеме данных прогноз носит исследовательский характер. Надёжность должна подтверждаться на новых варках.
+```bash
+python -m app.cli promote-model MODEL_ID
+```
+
+## Docker
+
+Сборка:
+
+```bash
+docker build -t shampoo-quality-forecast .
+```
+
+Запуск:
+
+```bash
+docker run --rm -p 8000:8000 shampoo-quality-forecast
+```
+
+Перед запуском убедитесь, что внутри контейнера доступен корректный `production.db`.
+
+## Важное предупреждение
+
+На текущем объёме данных прогноз носит исследовательский характер.
+Надёжность должна подтверждаться на новых варках.
+
+Модель не заменяет лабораторный контроль и не должна использоваться как единственный источник решения о качестве партии.
