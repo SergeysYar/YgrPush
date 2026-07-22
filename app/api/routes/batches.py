@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.api.dependencies import get_settings
+from app.database.repositories import BatchRepository
 from app.database.source import DatabaseInspector
 
 router = APIRouter()
@@ -22,3 +23,15 @@ def list_batches(
         raise HTTPException(status_code=404, detail="Batches table not found")
     batches = inspector.list_batches(status=status, product_id=product_id, has_protocol=has_protocol, limit=limit, offset=offset)
     return {"count": len(batches), "items": batches}
+
+
+@router.get("/{batch_id}", summary="Get batch details")
+def get_batch_details(
+    batch_id: int,
+    settings = Depends(get_settings),
+) -> dict[str, object]:
+    repository = BatchRepository(settings.db_path)
+    payload = repository.get_batch_detail(batch_id)
+    if payload is None:
+        raise HTTPException(status_code=404, detail=f"Batch {batch_id} not found")
+    return payload

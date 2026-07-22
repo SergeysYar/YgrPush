@@ -129,3 +129,74 @@ class DatasetBuilder:
             "out_of_range_count": report.out_of_range_count,
             "issues_by_field": report.issues_by_field,
         }
+
+    def get_api_summary(self) -> dict[str, Any]:
+        """Build API-oriented summary aligned with the product prompt."""
+        measurements = self.load_measurements()
+        report = self.quality_inspector.inspect_measurements(measurements)
+
+        if measurements.empty:
+            return {
+                "total_measurements": 0,
+                "total_batches": 0,
+                "labeled_batches": {"ph": 0, "viscosity": 0, "chlorides": 0},
+                "protocol_count": 0,
+                "batches_with_repeated_protocols": 0,
+                "missing_count": 0,
+                "suspicious_count": 0,
+                "step_distribution": {},
+            }
+
+        batch_ids = sorted(int(batch_id) for batch_id in measurements["batchID"].dropna().astype(int).unique())
+        labeled = {"ph": 0, "viscosity": 0, "chlorides": 0}
+        repeated_protocols = 0
+
+        protocol_count = 0
+        with self.inspector._connect() as conn:
+            if self.inspector.has_table("Testing_Protocols"):
+                protocol_count = int(
+                    pd.read_sql_query("SELECT COUNT(*) AS cnt FROM Testing_Protocols", conn)["cnt"].iloc[0]
+                )
+                repeated_protocols = int(
+                    pd.read_sql_query(
+                        """
+                        SELECT COUNT(*) AS cnt
+                        FROM (
+                            SELECT batch_id
+                            FROM Testing_Protocols
+                            GROUP BY batch_id
+                            HAVING COUNT(*) > 1
+                        )
+                        """,
+                        conn,
+                    )["cnt"].iloc[0]
+                )
+
+        for batch_id in batch_ids:
+            targets = load_targets(batch_id, self.db_path, TargetProtocolPolicy.latest)
+            if not targets:
+                continue
+            target_row = targets[-1]
+            if target_row.get("ph") is not None:
+                labeled["ph"] += 1
+            if target_row.get("viscosity") is not None:
+                labeled["viscosity"] += 1
+            if target_row.get("chlorides") is not None:
+                labeled["chlorides"] += 1
+
+        step_distribution_series = measurements.groupby("batchID").size().sort_index()
+        step_distribution = {
+            str(int(batch_id)): int(count)
+            for batch_id, count in step_distribution_series.items()
+        }
+
+        return {
+            "total_measurements": report.total_measurements,
+            "total_batches": report.total_batches,
+            "labeled_batches": labeled,
+            "protocol_count": protocol_count,
+            "batches_with_repeated_protocols": repeated_protocols,
+            "missing_count": report.missing_count,
+            "suspicious_count": report.invalid_count + report.out_of_range_count,
+            "step_distribution": step_distribution,
+        }
