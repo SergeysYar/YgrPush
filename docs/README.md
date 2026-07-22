@@ -19,7 +19,9 @@
 13. `docs/13-diagrams.md`
 14. `docs/14-scientific-foundation.md`
 15. `docs/15-experiments-and-reproducibility.md`
-16. `docs/10-limitations-and-roadmap.md`
+16. `docs/16-results-and-metrics.md`
+17. `docs/17-methodology.md`
+18. `docs/10-limitations-and-roadmap.md`
 
 ## Карта документов
 
@@ -39,6 +41,8 @@
 - `docs/13-diagrams.md` — Mermaid-диаграммы по потоку данных, архитектуре и жизненному циклу модели
 - `docs/14-scientific-foundation.md` — научная постановка задачи, исследовательская ценность и сильные методологические стороны проекта
 - `docs/15-experiments-and-reproducibility.md` — как в проекте устроены эксперименты, сравнение моделей и воспроизводимость результатов
+- `docs/16-results-and-metrics.md` — как представлять результаты, какие метрики важны и как интерпретировать качество моделей
+- `docs/17-methodology.md` — академичное описание методологии проекта: постановка, данные, датасет, валидация, моделирование и ограничения
 
 ## Сценарии чтения по ролям
 
@@ -52,6 +56,7 @@
 4. `docs/08-dashboard.md`
 5. `docs/11-faq.md`
 6. `docs/14-scientific-foundation.md`
+7. `docs/16-results-and-metrics.md`
 
 ### Аналитику и ML-инженеру
 
@@ -64,6 +69,7 @@
 5. `docs/09-operations.md`
 6. `docs/10-limitations-and-roadmap.md`
 7. `docs/15-experiments-and-reproducibility.md`
+8. `docs/17-methodology.md`
 
 ### Backend- и platform-инженеру
 
@@ -76,6 +82,7 @@
 5. `docs/09-operations.md`
 6. `docs/13-diagrams.md`
 7. `docs/15-experiments-and-reproducibility.md`
+8. `docs/17-methodology.md`
 
 ### Новому участнику команды
 
@@ -88,6 +95,7 @@
 5. `docs/06-api.md`
 6. `docs/11-faq.md`
 7. `docs/14-scientific-foundation.md`
+8. `docs/17-methodology.md`
 
 ## Что читать в зависимости от задачи
 
@@ -99,6 +107,8 @@
 - Нужно быстро ответить на типовой вопрос стейкхолдера — проверьте `docs/11-faq.md`
 - Нужно показать, что проект имеет сильную научную и исследовательскую основу — начните с `docs/14-scientific-foundation.md`
 - Нужно показать зрелость экспериментов и воспроизводимость — откройте `docs/15-experiments-and-reproducibility.md`
+- Нужно показать результаты проекта как исследовательской работы — откройте `docs/16-results-and-metrics.md`
+- Нужно описать проект в формате методологии или mini-paper — начните с `docs/17-methodology.md`
 
 ## Связь с главным README
 
