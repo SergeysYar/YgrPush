@@ -8,7 +8,7 @@ import pandas as pd
 from app.config import settings
 from app.data.dataset_builder import DatasetBuilder
 from app.features.batch_features import BatchFeatureBuilder
-from app.database.ml_storage import ModelRegistry
+from app.database.ml_storage import ModelRegistry, PredictionRepository
 from app.ml.service import TrainingPipeline
 from app.ml.baseline import BaselineModel
 from app.ml.ridge import RidgeModel
@@ -31,6 +31,7 @@ class PredictionService:
         self.dataset_builder = DatasetBuilder(self.db_path)
         self.feature_builder = BatchFeatureBuilder()
         self.registry = ModelRegistry(self.ml_storage_path)
+        self.prediction_repository = PredictionRepository(self.ml_storage_path)
 
     def _resolve_model_meta(self, target: str) -> dict[str, Any] | None:
         champions = self.registry.get_champion_models()
@@ -162,6 +163,44 @@ class PredictionService:
             ],
         }
 
+    def _persist_batch_predictions(
+        self,
+        batch_id: int,
+        checkpoint_order: int,
+        model_id: str,
+        predictions: dict[str, dict[str, Any]],
+        actual_values: dict[str, float | None],
+        features: dict[str, Any],
+    ) -> None:
+        created_at = pd.Timestamp.utcnow().isoformat()
+        for target_name, prediction in predictions.items():
+            prediction_id = self.prediction_repository.save_batch_prediction(
+                batch_id=batch_id,
+                checkpoint_order=checkpoint_order,
+                created_at=created_at,
+                model_version=model_id,
+                target=target_name,
+                predicted_value=prediction["value"],
+                lower_bound=prediction["lower"],
+                upper_bound=prediction["upper"],
+                status=prediction["status"],
+                confidence=prediction["confidence"],
+                actual_value=actual_values.get(target_name),
+            )
+            self.prediction_repository.save_prediction_items(prediction_id, features)
+
+    def _target_actual_values(self, batch_data: dict[str, Any]) -> dict[str, float | None]:
+        targets = batch_data.get("targets") or []
+        if not targets:
+            return {"ph": None, "viscosity": None, "chlorides": None}
+
+        latest = targets[-1]
+        return {
+            "ph": float(latest.get("ph")) if latest.get("ph") is not None else None,
+            "viscosity": float(latest.get("viscosity")) if latest.get("viscosity") is not None else None,
+            "chlorides": float(latest.get("chlorides")) if latest.get("chlorides") is not None else None,
+        }
+
     def predict_batch(self, batch_id: int, up_to_step_order: int | None = None, up_to_measurement_id: int | None = None) -> dict[str, Any]:
         batch_data = self.dataset_builder.load_batch_data(batch_id)
         measurements = batch_data["measurements"]
@@ -175,6 +214,11 @@ class PredictionService:
             measurements = measurements[measurements["id"] <= up_to_measurement_id]
 
         features = self._build_feature_vector(measurements)
+        predictions = {
+            "ph": self._predict_target("ph", features),
+            "viscosity": self._predict_target("viscosity", features),
+            "chlorides": self._predict_target("chlorides", features),
+        }
         prediction_payload = {
             "batch_id": batch_id,
             "checkpoint": {
@@ -182,13 +226,19 @@ class PredictionService:
                 "last_measurement_id": int(measurements["id"].iloc[-1]) if not measurements.empty else None,
             },
             "data_quality": self._get_data_quality(measurements),
-            "predictions": {
-                "ph": self._predict_target("ph", features),
-                "viscosity": self._predict_target("viscosity", features),
-                "chlorides": self._predict_target("chlorides", features),
-            },
+            "predictions": predictions,
             "similar_batches": self._build_similar_batches(features.iloc[0].to_dict(), batch_id),
         }
+
+        actual_values = self._target_actual_values(batch_data)
+        self._persist_batch_predictions(
+            batch_id=batch_id,
+            checkpoint_order=len(measurements),
+            model_id=predictions["ph"]["model"] or predictions["viscosity"]["model"] or predictions["chlorides"]["model"],
+            predictions=predictions,
+            actual_values=actual_values,
+            features=features.iloc[0].to_dict(),
+        )
 
         return prediction_payload
 
@@ -223,6 +273,20 @@ class PredictionService:
             },
             "similar_batches": [],
         }
+
+    def update_prediction_actuals(self) -> int:
+        unmatched = self.prediction_repository.list_unmatched_predictions(limit=1000)
+        updates = 0
+        for row in unmatched:
+            batch_id = int(row["batch_id"])
+            target = row["target"]
+            batch_data = self.dataset_builder.load_batch_data(batch_id)
+            actual_values = self._target_actual_values(batch_data)
+            actual_value = actual_values.get(target)
+            if actual_value is not None:
+                self.prediction_repository.update_actual_value(int(row["prediction_id"]), actual_value)
+                updates += 1
+        return updates
 
     def train_if_no_model(self) -> None:
         if self.registry.list_models():

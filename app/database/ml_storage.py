@@ -133,6 +133,120 @@ class ModelRegistry:
             cur.execute("UPDATE model_registry SET status = 'champion' WHERE model_id = ?", (model_id,))
             conn.commit()
 
+    def get_predictions_for_batch(self, batch_id: int) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT * FROM batch_predictions WHERE batch_id = ? ORDER BY created_at DESC",
+                (batch_id,),
+            )
+            return [dict(row) for row in cur.fetchall()]
+
+
+class PredictionRepository:
+    def __init__(self, db_path: Path | str | None = None) -> None:
+        self.db_path = Path(db_path or settings.ml_storage_path)
+        self._ensure_tables()
+
+    def _connect(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    def _ensure_tables(self) -> None:
+        with self._connect() as conn:
+            cur = conn.cursor()
+            for ddl in CREATE_TABLES_SQL:
+                cur.execute(ddl)
+            conn.commit()
+
+    def save_batch_prediction(
+        self,
+        batch_id: int,
+        checkpoint_order: int,
+        created_at: str,
+        model_version: str,
+        target: str,
+        predicted_value: float,
+        lower_bound: float,
+        upper_bound: float,
+        status: str,
+        confidence: str,
+        actual_value: float | None = None,
+    ) -> int:
+        with self._connect() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO batch_predictions (batch_id, checkpoint_order, created_at, model_version, target, predicted_value, lower_bound, upper_bound, status, confidence, actual_value) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    batch_id,
+                    checkpoint_order,
+                    created_at,
+                    model_version,
+                    target,
+                    predicted_value,
+                    lower_bound,
+                    upper_bound,
+                    status,
+                    confidence,
+                    actual_value,
+                ),
+            )
+            conn.commit()
+            return cur.lastrowid
+
+    def save_prediction_items(self, prediction_id: int, features: dict[str, Any]) -> None:
+        with self._connect() as conn:
+            cur = conn.cursor()
+            for feature_name, feature_value in features.items():
+                cur.execute(
+                    "INSERT INTO prediction_items (prediction_id, feature_name, feature_value) VALUES (?, ?, ?)",
+                    (prediction_id, feature_name, float(feature_value) if feature_value is not None else None),
+                )
+            conn.commit()
+
+    def list_predictions(
+        self,
+        batch_id: int | None = None,
+        target: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            cur = conn.cursor()
+            sql = "SELECT * FROM batch_predictions"
+            params: list[Any] = []
+            conditions: list[str] = []
+            if batch_id is not None:
+                conditions.append("batch_id = ?")
+                params.append(batch_id)
+            if target is not None:
+                conditions.append("target = ?")
+                params.append(target)
+            if conditions:
+                sql += " WHERE " + " AND ".join(conditions)
+            sql += " ORDER BY created_at DESC LIMIT ?"
+            params.append(limit)
+            cur.execute(sql, tuple(params))
+            return [dict(row) for row in cur.fetchall()]
+
+    def list_unmatched_predictions(self, limit: int = 100) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT * FROM batch_predictions WHERE actual_value IS NULL ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            )
+            return [dict(row) for row in cur.fetchall()]
+
+    def update_actual_value(self, prediction_id: int, actual_value: float) -> None:
+        with self._connect() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "UPDATE batch_predictions SET actual_value = ? WHERE prediction_id = ?",
+                (actual_value, prediction_id),
+            )
+            conn.commit()
+
 
 def initialize_ml_storage(db_path: Path | str | None = None, create_tables: bool = True) -> ModelRegistry | None:
     try:

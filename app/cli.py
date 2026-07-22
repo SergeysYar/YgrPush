@@ -113,7 +113,11 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Promoted model {args.model_id}")
             return 0
         case "update-actuals":
-            print("Updating actuals is not implemented yet.")
+            from .ml.prediction_service import PredictionService
+
+            service = PredictionService(settings.db_path, settings.ml_storage_path)
+            updated_count = service.update_prediction_actuals()
+            print(f"Updated actual values for {updated_count} prediction records.")
             return 0
         case "run-api":
             return _run_api()

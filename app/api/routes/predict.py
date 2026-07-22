@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, HTTPException, Path, Query, Body
 
 from app.ml.prediction_service import PredictionService

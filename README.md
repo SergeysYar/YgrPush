@@ -75,6 +75,12 @@ python -m app.cli run-api
 python -m app.cli run-dashboard
 ```
 
+- Обновить актуальные значения для сохранённых прогнозов:
+
+```bash
+python -m app.cli update-actuals
+```
+
 ## Запустить обучение моделей (Stage 5):
 
 ```bash
@@ -128,6 +134,7 @@ python -m app.cli train
 - `GET /health`
 - `GET /api/v1/batches`
 - `POST /api/v1/predict/batch/{batch_id}`
+- `GET /api/v1/predictions?batch_id={batch_id}`
 
 ## Переобучение
 
