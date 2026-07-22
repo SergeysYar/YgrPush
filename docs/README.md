@@ -1,50 +1,95 @@
 # Документация системы
 
-Этот раздел собран как подробный путеводитель по системе прогнозирования качества шампуня.
+Этот раздел — единая точка входа в документацию по системе прогнозирования качества шампуня. Здесь собраны материалы для разных ролей: бизнес-пользователей, технологов, аналитиков, ML-инженеров, backend-разработчиков и новых участников команды.
 
-Если вы открыли проект впервые, рекомендуемый порядок чтения такой:
+Если вы открыли проект впервые, лучше идти по следующему порядку:
 
-1. `docs/01-overview.md`
-2. `docs/02-business-scenario.md`
-3. `docs/03-architecture.md`
-4. `docs/04-data-and-database.md`
-5. `docs/05-ml-and-training.md`
-6. `docs/06-api.md`
-7. `docs/07-cli.md`
-8. `docs/08-dashboard.md`
-9. `docs/09-operations.md`
-10. `docs/10-limitations-and-roadmap.md`
+1. `docs/00-quick-start.md`
+2. `docs/01-overview.md`
+3. `docs/02-business-scenario.md`
+4. `docs/03-architecture.md`
+5. `docs/04-data-and-database.md`
+6. `docs/05-ml-and-training.md`
+7. `docs/06-api.md`
+8. `docs/07-cli.md`
+9. `docs/08-dashboard.md`
+10. `docs/09-operations.md`
+11. `docs/11-faq.md`
+12. `docs/12-api-examples.md`
+13. `docs/13-diagrams.md`
+14. `docs/10-limitations-and-roadmap.md`
 
 ## Карта документов
 
-- `docs/01-overview.md` — что делает система, для кого она нужна и какая у неё главная идея
-- `docs/02-business-scenario.md` — как система используется в производственном процессе
-- `docs/03-architecture.md` — устройство проекта по слоям и ключевым модулям
-- `docs/04-data-and-database.md` — откуда берутся данные, как они очищаются и превращаются в признаки
-- `docs/05-ml-and-training.md` — обучение, валидация, модели, champion/challenger, CatBoost
-- `docs/06-api.md` — подробное описание API и типовых сценариев использования
-- `docs/07-cli.md` — команды CLI и ожидаемое поведение
-- `docs/08-dashboard.md` — как устроен Streamlit-интерфейс
-- `docs/09-operations.md` — эксплуатация, артефакты, переобучение, хранение результатов
+- `docs/00-quick-start.md` — самый короткий путь от клона репозитория до первого запуска
+- `docs/01-overview.md` — главная идея системы, цели и бизнес-ценность
+- `docs/02-business-scenario.md` — как система встраивается в производственный процесс
+- `docs/03-architecture.md` — устройство проекта по слоям, сервисам и модулям
+- `docs/04-data-and-database.md` — источники данных, очистка, таргеты, признаки и датасеты
+- `docs/05-ml-and-training.md` — обучение, валидация, модели, сохранение артефактов
+- `docs/06-api.md` — описание API и контрактов на уровне маршрутов
+- `docs/07-cli.md` — операционные команды и сценарии использования CLI
+- `docs/08-dashboard.md` — назначение и структура dashboard
+- `docs/09-operations.md` — сопровождение, хранение моделей, переобучение, контроль качества
 - `docs/10-limitations-and-roadmap.md` — ограничения текущего MVP и направления развития
+- `docs/11-faq.md` — ответы на частые вопросы по эксплуатации и смыслу системы
+- `docs/12-api-examples.md` — готовые примеры вызовов API и ожидаемой логики работы
+- `docs/13-diagrams.md` — Mermaid-диаграммы по потоку данных, архитектуре и жизненному циклу модели
 
-## Кому что читать
+## Сценарии чтения по ролям
 
-- **Технологу / бизнес-пользователю**
-  - `docs/01-overview.md`
-  - `docs/02-business-scenario.md`
-  - `docs/08-dashboard.md`
+### Технологу и бизнес-пользователю
 
-- **Аналитику / ML-инженеру**
-  - `docs/04-data-and-database.md`
-  - `docs/05-ml-and-training.md`
-  - `docs/10-limitations-and-roadmap.md`
+Рекомендуемый порядок:
 
-- **Backend / platform-инженеру**
-  - `docs/03-architecture.md`
-  - `docs/06-api.md`
-  - `docs/07-cli.md`
-  - `docs/09-operations.md`
+1. `docs/00-quick-start.md`
+2. `docs/01-overview.md`
+3. `docs/02-business-scenario.md`
+4. `docs/08-dashboard.md`
+5. `docs/11-faq.md`
 
-- **Новому участнику команды**
-  - Начните с `docs/01-overview.md`, затем `docs/03-architecture.md`, потом `docs/06-api.md`
+### Аналитику и ML-инженеру
+
+Рекомендуемый порядок:
+
+1. `docs/00-quick-start.md`
+2. `docs/03-architecture.md`
+3. `docs/04-data-and-database.md`
+4. `docs/05-ml-and-training.md`
+5. `docs/09-operations.md`
+6. `docs/10-limitations-and-roadmap.md`
+
+### Backend- и platform-инженеру
+
+Рекомендуемый порядок:
+
+1. `docs/00-quick-start.md`
+2. `docs/03-architecture.md`
+3. `docs/06-api.md`
+4. `docs/07-cli.md`
+5. `docs/09-operations.md`
+6. `docs/13-diagrams.md`
+
+### Новому участнику команды
+
+Рекомендуемый порядок:
+
+1. `docs/00-quick-start.md`
+2. `docs/01-overview.md`
+3. `docs/03-architecture.md`
+4. `docs/04-data-and-database.md`
+5. `docs/06-api.md`
+6. `docs/11-faq.md`
+
+## Что читать в зависимости от задачи
+
+- Нужно быстро понять, что вообще делает система — начните с `docs/01-overview.md`
+- Нужно запустить проект локально — откройте `docs/00-quick-start.md`
+- Нужно понять, откуда берутся прогнозы — смотрите `docs/04-data-and-database.md` и `docs/05-ml-and-training.md`
+- Нужно встроить систему в другой контур — начните с `docs/06-api.md` и `docs/12-api-examples.md`
+- Нужно сопровождать систему в проде — откройте `docs/09-operations.md`
+- Нужно быстро ответить на типовой вопрос стейкхолдера — проверьте `docs/11-faq.md`
+
+## Связь с главным README
+
+Главная обзорная страница проекта находится в `README.md`. Она даёт короткое представление о системе, а текущий раздел раскрывает её подробно и по ролям.
