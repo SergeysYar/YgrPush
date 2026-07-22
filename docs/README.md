@@ -17,7 +17,9 @@
 11. `docs/11-faq.md`
 12. `docs/12-api-examples.md`
 13. `docs/13-diagrams.md`
-14. `docs/10-limitations-and-roadmap.md`
+14. `docs/14-scientific-foundation.md`
+15. `docs/15-experiments-and-reproducibility.md`
+16. `docs/10-limitations-and-roadmap.md`
 
 ## Карта документов
 
@@ -35,6 +37,8 @@
 - `docs/11-faq.md` — ответы на частые вопросы по эксплуатации и смыслу системы
 - `docs/12-api-examples.md` — готовые примеры вызовов API и ожидаемой логики работы
 - `docs/13-diagrams.md` — Mermaid-диаграммы по потоку данных, архитектуре и жизненному циклу модели
+- `docs/14-scientific-foundation.md` — научная постановка задачи, исследовательская ценность и сильные методологические стороны проекта
+- `docs/15-experiments-and-reproducibility.md` — как в проекте устроены эксперименты, сравнение моделей и воспроизводимость результатов
 
 ## Сценарии чтения по ролям
 
@@ -47,6 +51,7 @@
 3. `docs/02-business-scenario.md`
 4. `docs/08-dashboard.md`
 5. `docs/11-faq.md`
+6. `docs/14-scientific-foundation.md`
 
 ### Аналитику и ML-инженеру
 
@@ -58,6 +63,7 @@
 4. `docs/05-ml-and-training.md`
 5. `docs/09-operations.md`
 6. `docs/10-limitations-and-roadmap.md`
+7. `docs/15-experiments-and-reproducibility.md`
 
 ### Backend- и platform-инженеру
 
@@ -69,6 +75,7 @@
 4. `docs/07-cli.md`
 5. `docs/09-operations.md`
 6. `docs/13-diagrams.md`
+7. `docs/15-experiments-and-reproducibility.md`
 
 ### Новому участнику команды
 
@@ -80,6 +87,7 @@
 4. `docs/04-data-and-database.md`
 5. `docs/06-api.md`
 6. `docs/11-faq.md`
+7. `docs/14-scientific-foundation.md`
 
 ## Что читать в зависимости от задачи
 
@@ -89,6 +97,8 @@
 - Нужно встроить систему в другой контур — начните с `docs/06-api.md` и `docs/12-api-examples.md`
 - Нужно сопровождать систему в проде — откройте `docs/09-operations.md`
 - Нужно быстро ответить на типовой вопрос стейкхолдера — проверьте `docs/11-faq.md`
+- Нужно показать, что проект имеет сильную научную и исследовательскую основу — начните с `docs/14-scientific-foundation.md`
+- Нужно показать зрелость экспериментов и воспроизводимость — откройте `docs/15-experiments-and-reproducibility.md`
 
 ## Связь с главным README
 
