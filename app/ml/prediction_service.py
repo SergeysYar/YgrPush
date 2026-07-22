@@ -74,15 +74,35 @@ class PredictionService:
         return {
             "num_steps": "Количество выполненных этапов",
             "duration_sum": "Суммарная длительность этапов",
+            "avg_step_duration": "Средняя длительность этапа",
+            "max_step_duration": "Максимальная длительность этапа",
+            "invalid_durations_count": "Количество некорректных длительностей",
             "average_ph": "Средний pH по выполненным этапам",
             "first_ph": "Первый измеренный pH",
             "last_ph": "Последний измеренный pH",
             "min_ph": "Минимальный измеренный pH",
             "max_ph": "Максимальный измеренный pH",
+            "avg_temp": "Средняя температура",
+            "min_temp": "Минимальная температура",
+            "max_temp": "Максимальная температура",
+            "first_temp": "Начальная температура",
+            "last_temp": "Последняя температура",
+            "avg_freq": "Средняя частота мешалки",
+            "max_freq": "Максимальная частота мешалки",
+            "avg_pe": "Среднее значение PE",
+            "max_pe": "Максимальное значение PE",
             "component_mass_total": "Суммарная масса известных компонентов",
+            "unique_components_count": "Количество уникальных компонентов",
+            "water_mass_total": "Суммарная масса воды",
+            "salt_mass_total": "Суммарная масса соли",
+            "acid_mass_total": "Суммарная масса кислоты",
             "water_steps": "Количество этапов воды",
             "salt_steps": "Количество этапов соли",
             "acid_steps": "Количество этапов кислоты",
+            "measurement_steps": "Количество измерительных этапов",
+            "correction_steps": "Количество корректирующих этапов",
+            "missing_sensor_readings": "Количество пропусков датчиков",
+            "suspicious_values_count": "Количество подозрительных значений",
             "last_completed_step": "Порядок последнего выполненного этапа",
         }
 
@@ -194,11 +214,28 @@ class PredictionService:
             return "medium"
         return "low"
 
-    def _top_factors(self, features: pd.DataFrame, limit: int = 5) -> list[str]:
+    def _humanize_factor_name(self, feature_name: str) -> str:
+        labels = self._feature_labels()
+        return labels.get(feature_name, feature_name.replace("_", " "))
+
+    def _top_factors(self, features: pd.DataFrame, model: Any | None = None, limit: int = 5) -> list[str]:
+        if model is not None:
+            try:
+                explanation = model.explain(features)
+                rows = explanation.get("top_factors", []) if isinstance(explanation, dict) else []
+                factor_names = [
+                    self._humanize_factor_name(str(row.get("feature")))
+                    for row in rows
+                    if isinstance(row, dict) and row.get("feature")
+                ]
+                if factor_names:
+                    return factor_names[:limit]
+            except Exception:
+                pass
+
         if features.empty:
             return []
         feature_values = features.iloc[0].to_dict()
-        labels = self._feature_labels()
         ranked = sorted(
             feature_values.items(),
             key=lambda item: abs(float(item[1] or 0.0)),
@@ -208,7 +245,7 @@ class PredictionService:
         for feature_name, feature_value in ranked:
             if abs(float(feature_value or 0.0)) <= 0:
                 continue
-            result.append(labels.get(feature_name, feature_name))
+            result.append(self._humanize_factor_name(feature_name))
             if len(result) >= limit:
                 break
         return result
@@ -226,10 +263,11 @@ class PredictionService:
                 "value": None,
                 "lower": None,
                 "upper": None,
-                "confidence": "low",
-                "model": None,
-                "status": "no_model_available",
-                "training_batches": 0,
+            "confidence": "low",
+            "model": None,
+            "status": "no_model_available",
+            "training_batches": 0,
+            "top_factors": [],
             }
 
         model = self._load_model(model_meta)
@@ -258,7 +296,7 @@ class PredictionService:
             "model": model_meta["model_id"],
             "status": status,
             "training_batches": training_batches,
-            "top_factors": self._top_factors(X),
+            "top_factors": self._top_factors(X, model=model),
         }
 
     def _build_similar_batches(self, current_features: dict[str, float], batch_id: int, limit: int = 5) -> list[dict[str, Any]]:
