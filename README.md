@@ -239,3 +239,31 @@ docker run --rm -p 8000:8000 shampoo-quality-forecast
 Надёжность должна подтверждаться на новых варках.
 
 Модель не заменяет лабораторный контроль и не должна использоваться как единственный источник решения о качестве партии.
+
+## Update Notes (July 22, 2026)
+
+- `Streamlit` dashboard now includes:
+  - data overview
+  - batch prediction view
+  - model registry view
+  - data quality view
+- `Champion/Challenger` registry now stores:
+  - per-target model versions
+  - training runs
+  - champion/challenger summary
+- Data quality issues can now be stored in `ml_storage.db` and viewed through:
+  - `GET /api/v1/reports/data-quality?store=true`
+  - `GET /api/v1/reports/data-quality/issues`
+- Stored predictions are available through:
+  - `GET /api/v1/predictions`
+- Optional `CatBoost` support is implemented with safe fallback:
+  - if `catboost` is not installed, training returns `unavailable`
+  - if labeled batch count is below `CATBOOST_MIN_LABELED_BATCHES`, training returns `skipped`
+  - if `shap` is installed, `CatBoost` explanations use SHAP
+  - otherwise they fall back to feature importance
+- API response schemas were added for:
+  - batches
+  - predictions
+  - models
+  - reports
+  - stored predictions
