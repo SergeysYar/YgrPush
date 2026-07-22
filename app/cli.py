@@ -74,7 +74,7 @@ def main(argv: list[str] | None = None) -> int:
         case "train":
             from .ml.service import TrainingPipeline
             pipeline = TrainingPipeline(settings.db_path, settings.ml_storage_path)
-            results = pipeline.train_all()
+            results = pipeline.train_all(snapshot_mode=True)
             pipeline.save_cv_report(results)
             print("\nModels trained successfully")
             return 0
@@ -82,7 +82,7 @@ def main(argv: list[str] | None = None) -> int:
             from .ml.service import TrainingPipeline
 
             pipeline = TrainingPipeline(settings.db_path, settings.ml_storage_path)
-            results = pipeline.train_all()
+            results = pipeline.train_all(snapshot_mode=True)
             pipeline.save_cv_report(results)
             print("\nEvaluation complete")
             return 0

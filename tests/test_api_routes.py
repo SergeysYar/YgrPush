@@ -188,7 +188,7 @@ def test_train_route(monkeypatch, tmp_path):
     def override_settings():
         return Settings(db_path=db_path, ml_storage_path=tmp_path / "ml_storage.db")
 
-    def fake_train_all(self):
+    def fake_train_all(self, snapshot_mode=False):
         return {
             "baseline": {
                 "ph": {
@@ -214,6 +214,7 @@ def test_train_route(monkeypatch, tmp_path):
     assert payload["status"] == "ok"
     assert payload["model_ids"] == ["model-baseline-ph"]
     assert "baseline" in payload["metrics"]
+    assert payload["snapshot_mode"] is True
     app.dependency_overrides.clear()
 
 

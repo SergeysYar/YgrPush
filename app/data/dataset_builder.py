@@ -11,6 +11,7 @@ from app.data.target_loader import load_targets, TargetProtocolPolicy
 from app.data.component_normalizer import ComponentNormalizer
 from app.data.data_quality import DataQualityInspector
 from app.features.batch_features import BatchFeatureBuilder
+from app.features.snapshot_features import SnapshotBuilder
 
 
 class DatasetBuilder:
@@ -19,6 +20,7 @@ class DatasetBuilder:
         self.inspector = DatabaseInspector(self.db_path)
         self.normalizer = ComponentNormalizer()
         self.quality_inspector = DataQualityInspector()
+        self.snapshot_builder = SnapshotBuilder()
 
     def load_measurements(self) -> pd.DataFrame:
         """Load all measurements from production database."""
@@ -106,6 +108,63 @@ class DatasetBuilder:
                 "target_chlorides": float(targets[0]["chlorides"]) if targets and targets[0].get("chlorides") else None,
             }
             rows.append(batch_row)
+
+        return pd.DataFrame(rows)
+
+    def build_snapshot_features_dataset(self) -> pd.DataFrame:
+        """Build dataset with one row per snapshot of each batch.
+
+        Each batch produces incremental snapshots from first completed step
+        to final step. Targets are repeated per batch, but grouping remains
+        by batch_id to avoid leakage in validation.
+        """
+        with self.inspector._connect() as conn:
+            batch_ids_sql = """
+            SELECT DISTINCT batchID FROM measurements ORDER BY batchID
+            """
+            batch_ids = pd.read_sql_query(batch_ids_sql, conn)["batchID"].unique()
+
+        rows = []
+        for batch_id in batch_ids:
+            batch_data = self.load_batch_data(int(batch_id))
+            measurements = batch_data["measurements"]
+            targets = batch_data["targets"]
+
+            if measurements.empty:
+                continue
+
+            target_values = {}
+            if targets:
+                target_values = {
+                    "ph": float(targets[0]["ph"]) if targets[0].get("ph") is not None else None,
+                    "viscosity": float(targets[0]["viscosity"]) if targets[0].get("viscosity") is not None else None,
+                    "chlorides": float(targets[0]["chlorides"]) if targets[0].get("chlorides") is not None else None,
+                }
+
+            snapshots = self.snapshot_builder.build_batch_snapshots(
+                measurements,
+                batch_id=int(batch_id),
+                target_values=target_values,
+            )
+            if not snapshots:
+                continue
+
+            snapshot_weight = 1.0 / len(snapshots)
+            for snapshot in snapshots:
+                rows.append(
+                    {
+                        "batch_id": int(batch_id),
+                        "checkpoint_order": int(snapshot["checkpoint_order"]),
+                        "completed_steps": int(snapshot["completed_steps"]),
+                        "is_final_snapshot": bool(snapshot["is_final_snapshot"]),
+                        "snapshot_weight": snapshot_weight,
+                        "has_targets": any(value is not None for value in target_values.values()),
+                        **snapshot["features"],
+                        "target_ph": target_values.get("ph"),
+                        "target_viscosity": target_values.get("viscosity"),
+                        "target_chlorides": target_values.get("chlorides"),
+                    }
+                )
 
         return pd.DataFrame(rows)
 

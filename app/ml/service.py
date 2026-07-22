@@ -43,7 +43,7 @@ class TrainingPipeline:
             metrics=metrics,
         )
 
-    def prepare_training_data(self) -> dict[str, Any]:
+    def prepare_training_data(self, snapshot_mode: bool = False) -> dict[str, Any]:
         """Prepare training dataset for all targets.
         
         Returns dict with:
@@ -53,7 +53,11 @@ class TrainingPipeline:
         - chlorides_data: rows with chlorides label
         - complete_data: rows with all three targets (for PLS)
         """
-        batch_df = self.dataset_builder.build_batch_features_dataset()
+        batch_df = (
+            self.dataset_builder.build_snapshot_features_dataset()
+            if snapshot_mode
+            else self.dataset_builder.build_batch_features_dataset()
+        )
 
         training_data = {
             "all_batches": batch_df,
@@ -73,7 +77,11 @@ class TrainingPipeline:
         """Extract X and y, return with batch_ids for grouping."""
         # Feature columns: all except batch_id, has_targets, and target_* columns
         feature_cols = [col for col in data.columns if not col.startswith("target_")]
-        feature_cols = [col for col in feature_cols if col != "batch_id" and col != "has_targets"]
+        feature_cols = [
+            col
+            for col in feature_cols
+            if col not in {"batch_id", "has_targets", "snapshot_weight"}
+        ]
 
         X = data[feature_cols].fillna(0)  # Impute missing features with 0
         y = data[target_col].values
@@ -258,7 +266,7 @@ class TrainingPipeline:
 
         return results
 
-    def train_all(self) -> dict[str, Any]:
+    def train_all(self, snapshot_mode: bool = False) -> dict[str, Any]:
         """Execute full training pipeline with all models."""
         print("=" * 60)
         print("TRAINING PIPELINE - Stage 5")
@@ -266,13 +274,14 @@ class TrainingPipeline:
 
         # Prepare data
         print("\n[1/5] Preparing training data...")
-        training_data = self.prepare_training_data()
+        training_data = self.prepare_training_data(snapshot_mode=snapshot_mode)
 
         print(f"  Total batches: {len(training_data['all_batches'])}")
         print(f"  pH labeled: {len(training_data['ph_data'])}")
         print(f"  Viscosity labeled: {len(training_data['viscosity_data'])}")
         print(f"  Chlorides labeled: {len(training_data['chlorides_data'])}")
         print(f"  Complete (all 3 targets): {len(training_data['complete_data'])}")
+        print(f"  Snapshot mode: {snapshot_mode}")
 
         all_results = {}
 

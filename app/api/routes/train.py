@@ -25,7 +25,7 @@ def train_models(
     settings = Depends(get_settings),
 ) -> dict[str, Any]:
     pipeline = TrainingPipeline(settings.db_path, settings.ml_storage_path)
-    results = pipeline.train_all()
+    results = pipeline.train_all(snapshot_mode=payload.snapshot_mode)
     pipeline.save_cv_report(results)
 
     selected = set(payload.model_types)
