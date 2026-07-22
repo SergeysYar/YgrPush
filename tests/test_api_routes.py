@@ -56,6 +56,19 @@ def _create_test_db(db_path):
     )
     cur.execute(
         """
+        CREATE TABLE Components (
+            component_id INTEGER PRIMARY KEY,
+            name TEXT,
+            coefficient REAL,
+            article TEXT,
+            function_1 TEXT,
+            function_2 TEXT,
+            function_3 TEXT
+        )
+        """
+    )
+    cur.execute(
+        """
         CREATE TABLE Loading_Process (
             loading_step_id INTEGER PRIMARY KEY,
             batch_id INTEGER,
@@ -106,6 +119,9 @@ def _create_test_db(db_path):
     )
     cur.execute(
         "INSERT INTO Products VALUES (10, 'Test Shampoo', 'daily', 'water', 'W1', 'x', 'y', 'z', 'adj')"
+    )
+    cur.execute(
+        "INSERT INTO Components VALUES (501, 'Water', 1.0, 'A-1', 'water', '', '')"
     )
     cur.execute(
         "INSERT INTO Loading_Process VALUES (101, 1, 1, 'mix', 'done', 1)"
@@ -178,6 +194,8 @@ def test_batch_details_route(tmp_path):
     assert len(payload["measurements"]) == 2
     assert len(payload["protocols"]) == 1
     assert payload["targets"][0]["ph"] == 5.9
+    assert payload["components"][0]["component_name"] == "Water"
+    assert payload["components"][0]["component_group"] == "water"
     app.dependency_overrides.clear()
 
 

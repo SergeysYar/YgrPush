@@ -139,13 +139,38 @@ class BatchRepository:
             "viscosity_adjustment": row[8],
         }
 
+    def get_component_lookup(self) -> dict[int, dict[str, Any]]:
+        if not self.inspector.has_table("Components"):
+            return {}
+        with self.inspector._connect() as conn:
+            df = pd.read_sql_query(
+                """
+                SELECT component_id, name, coefficient, article, function_1, function_2, function_3
+                FROM Components
+                """,
+                conn,
+            )
+        if df.empty:
+            return {}
+        lookup: dict[int, dict[str, Any]] = {}
+        for row in df.to_dict(orient="records"):
+            try:
+                component_id = int(row["component_id"])
+            except (TypeError, ValueError):
+                continue
+            lookup[component_id] = row
+        return lookup
+
     def get_batch_detail(self, batch_id: int) -> dict[str, Any] | None:
         batch = self.get_batch(batch_id)
         if batch is None:
             return None
 
         measurements = self.get_batch_measurements(batch_id)
-        components = self.normalizer.normalize_batch_components(measurements)
+        components = self.normalizer.normalize_batch_components(
+            measurements,
+            component_lookup=self.get_component_lookup(),
+        )
         protocols = self.get_batch_protocols(batch_id)
         product = self.get_product(batch.get("product_id"))
         targets = load_targets(batch_id, self.inspector.db_path)

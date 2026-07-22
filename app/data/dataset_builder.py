@@ -50,7 +50,10 @@ class DatasetBuilder:
             measurements = pd.DataFrame(
                 [normalize_measurement_row(row) for row in measurements.to_dict(orient="records")]
             )
-            components = self.normalizer.normalize_batch_components(measurements)
+            components = self.normalizer.normalize_batch_components(
+                measurements,
+                component_lookup=self.batch_repository.get_component_lookup(),
+            )
 
         targets = load_targets(batch_id, self.db_path, settings.target_protocol_policy)
 

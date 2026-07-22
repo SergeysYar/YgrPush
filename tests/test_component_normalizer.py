@@ -34,11 +34,20 @@ def test_component_normalizer_single_component():
     normalizer = ComponentNormalizer()
     df = pd.DataFrame({
         "id": [1, 2],
+        "loading_step_type": ["water", "salt"],
         "component_1": [10, 20],
         "mass_1": [50.0, 75.0],
         "component_2": [None, None],
         "mass_2": [None, None]
     })
-    result = normalizer.normalize_batch_components(df)
+    result = normalizer.normalize_batch_components(
+        df,
+        component_lookup={
+            10: {"name": "Water", "function_1": "water", "function_2": "", "function_3": ""},
+            20: {"name": "Sodium Chloride", "function_1": "salt", "function_2": "", "function_3": ""},
+        },
+    )
     assert len(result) == 2
     assert result["component_id"].unique().tolist() == [10, 20]
+    assert result["component_name"].tolist() == ["Water", "Sodium Chloride"]
+    assert result["component_group"].tolist() == ["water", "salt"]

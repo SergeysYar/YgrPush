@@ -35,7 +35,41 @@ class ComponentNormalizer:
         self.component_cols = [f"component_{i}" for i in range(1, max_components + 1)]
         self.mass_cols = [f"mass_{i}" for i in range(1, max_components + 1)]
 
-    def normalize_batch_components(self, batch_df: pd.DataFrame) -> pd.DataFrame:
+    def _normalize_component_group(
+        self,
+        component_name: str | None,
+        step_type: str | None,
+        function_values: list[str] | None = None,
+    ) -> str:
+        function_values = function_values or []
+        joined = " ".join(
+            value.strip().lower()
+            for value in [component_name, step_type, *function_values]
+            if isinstance(value, str) and value.strip()
+        )
+        if any(token in joined for token in ["water", "вода", "h2o"]):
+            return "water"
+        if any(token in joined for token in ["salt", "соль", "nacl", "chloride", "хлорид"]):
+            return "salt"
+        if any(token in joined for token in ["acid", "кислот", "acetic", "уксус"]):
+            return "acid"
+        if any(token in joined for token in ["surf", "пав", "surfactant", "detergent"]):
+            return "surfactant"
+        if any(token in joined for token in ["thick", "загуст", "xanthan"]):
+            return "thickener"
+        if any(token in joined for token in ["preserv", "консерв"]):
+            return "preservative"
+        if any(token in joined for token in ["frag", "отдуш", "aroma"]):
+            return "fragrance"
+        if any(token in joined for token in ["color", "красител", "dye"]):
+            return "colorant"
+        return "other"
+
+    def normalize_batch_components(
+        self,
+        batch_df: pd.DataFrame,
+        component_lookup: dict[int, dict[str, Any]] | None = None,
+    ) -> pd.DataFrame:
         """Convert component data from wide to long format for a batch.
         
         Returns DataFrame with columns:
@@ -43,8 +77,11 @@ class ComponentNormalizer:
         - step_order
         - component_position
         - component_id
+        - component_name
         - component_mass
+        - component_group
         """
+        component_lookup = component_lookup or {}
         rows = []
         for idx, row in batch_df.iterrows():
             for pos in range(1, self.max_components + 1):
@@ -54,12 +91,29 @@ class ComponentNormalizer:
                     comp_id = row[comp_col]
                     mass = row[mass_col]
                     if comp_id is not None and comp_id != "" and mass is not None:
+                        try:
+                            normalized_component_id = int(comp_id)
+                        except (TypeError, ValueError):
+                            normalized_component_id = None
+                        component_meta = component_lookup.get(normalized_component_id or -1, {})
+                        component_name = component_meta.get("name")
+                        function_values = [
+                            str(component_meta.get("function_1") or ""),
+                            str(component_meta.get("function_2") or ""),
+                            str(component_meta.get("function_3") or ""),
+                        ]
                         rows.append({
                             "measurement_id": row.get("id"),
                             "step_order": idx,
                             "component_position": pos,
-                            "component_id": int(comp_id) if isinstance(comp_id, (int, float)) else None,
+                            "component_id": normalized_component_id,
+                            "component_name": component_name,
                             "component_mass": float(mass) if isinstance(mass, (int, float)) else None,
+                            "component_group": self._normalize_component_group(
+                                component_name=component_name,
+                                step_type=str(row.get("loading_step_type") or ""),
+                                function_values=function_values,
+                            ),
                         })
         return pd.DataFrame(rows) if rows else pd.DataFrame()
 
