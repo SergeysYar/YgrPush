@@ -1,5 +1,24 @@
 # Shampoo Quality Forecast
 
+## Documentation
+
+For a structured and detailed explanation of the system, use the documentation hub:
+
+- `docs/README.md`
+
+Quick links:
+
+- `docs/01-overview.md` � system idea and main purpose
+- `docs/02-business-scenario.md` � how the system is used in the production process
+- `docs/03-architecture.md` � project architecture and module responsibilities
+- `docs/04-data-and-database.md` � database, data flow, cleaning, targets, datasets
+- `docs/05-ml-and-training.md` � models, validation, training pipeline, champion/challenger
+- `docs/06-api.md` � API routes and usage scenarios
+- `docs/07-cli.md` � CLI commands and operational usage
+- `docs/08-dashboard.md` � Streamlit dashboard structure and usage
+- `docs/09-operations.md` � artifacts, storage, retraining, operational support
+- `docs/10-limitations-and-roadmap.md` � current limits and next development steps
+
 MVP системы прогнозирования конечного качества шампуня по данным технологических этапов варки.
 
 Проект строит признаки по завершённым и промежуточным этапам варки, извлекает лабораторные целевые значения из `production.db`, обучает базовые ML-модели и предоставляет CLI, API и заготовку dashboard-интерфейса.
@@ -267,3 +286,4 @@ docker run --rm -p 8000:8000 shampoo-quality-forecast
   - models
   - reports
   - stored predictions
+
