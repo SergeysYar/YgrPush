@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from pathlib import Path
 from typing import Any
 import numpy as np
@@ -17,7 +18,7 @@ from app.ml.validation import CVValidator, MetricsCalculator
 from app.ml.exporter import CVResultsExporter
 from app.ml.registry import ModelManager
 from app.database.ml_storage import ModelRegistry
-from datetime import datetime
+from datetime import UTC, datetime
 
 
 class TrainingPipeline:
@@ -370,6 +371,31 @@ class TrainingPipeline:
             CVResultsExporter.export_summary_metrics(all_results, "reports/cv_summary.csv")
         except Exception:
             pass
+
+        model_ids: list[str] = []
+        for model_result in all_results.values():
+            if not model_result:
+                continue
+            for target_result in model_result.values():
+                if isinstance(target_result, dict) and target_result.get("model_id"):
+                    model_ids.append(str(target_result["model_id"]))
+
+        batch_ids = (
+            sorted(int(batch_id) for batch_id in training_data["all_batches"]["batch_id"].dropna().unique())
+            if not training_data["all_batches"].empty and "batch_id" in training_data["all_batches"].columns
+            else []
+        )
+        self.ml_registry.create_training_run(
+            run_id=str(uuid.uuid4()),
+            created_at=datetime.now(UTC).isoformat(),
+            model_ids=model_ids,
+            batch_ids=batch_ids,
+            settings_payload={
+                "snapshot_mode": snapshot_mode,
+                "protocol_policy": protocol_policy or settings.target_protocol_policy,
+                "model_types": sorted(selected_model_types),
+            },
+        )
 
         return all_results
 

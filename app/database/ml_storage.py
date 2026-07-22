@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -102,21 +103,27 @@ class ModelRegistry:
     def list_models(self) -> list[dict[str, Any]]:
         with self._connect() as conn:
             cur = conn.cursor()
-            cur.execute("SELECT model_id, model_type, target, created_at, status, artifact_path, metrics_json, features_json FROM model_registry ORDER BY created_at DESC")
-            return [dict(row) for row in cur.fetchall()]
+            cur.execute(
+                """
+                SELECT model_id, model_type, target, created_at, status, version, artifact_path, metrics_json, features_json
+                FROM model_registry
+                ORDER BY created_at DESC
+                """
+            )
+            return [self._deserialize_model_row(dict(row)) for row in cur.fetchall()]
 
     def get_model(self, model_id: str) -> dict[str, Any] | None:
         with self._connect() as conn:
             cur = conn.cursor()
             cur.execute("SELECT * FROM model_registry WHERE model_id = ?", (model_id,))
             row = cur.fetchone()
-            return dict(row) if row else None
+            return self._deserialize_model_row(dict(row)) if row else None
 
     def get_champion_models(self) -> list[dict[str, Any]]:
         with self._connect() as conn:
             cur = conn.cursor()
             cur.execute("SELECT * FROM model_registry WHERE status = 'champion' ORDER BY created_at DESC")
-            return [dict(row) for row in cur.fetchall()]
+            return [self._deserialize_model_row(dict(row)) for row in cur.fetchall()]
 
     def get_latest_model(self, target: str, model_type: str | None = None) -> dict[str, Any] | None:
         with self._connect() as conn:
@@ -132,14 +139,113 @@ class ModelRegistry:
                     (target,),
                 )
             row = cur.fetchone()
-            return dict(row) if row else None
+            return self._deserialize_model_row(dict(row)) if row else None
 
     def promote_model(self, model_id: str) -> None:
+        model = self.get_model(model_id)
+        if model is None:
+            raise ValueError(f"Model {model_id} not found")
         with self._connect() as conn:
             cur = conn.cursor()
-            cur.execute("UPDATE model_registry SET status = 'archived' WHERE status = 'champion'")
+            cur.execute(
+                "UPDATE model_registry SET status = 'archived' WHERE status = 'champion' AND target = ?",
+                (model["target"],),
+            )
             cur.execute("UPDATE model_registry SET status = 'champion' WHERE model_id = ?", (model_id,))
             conn.commit()
+
+    def get_next_version(self, model_type: str, target: str) -> int:
+        with self._connect() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT COALESCE(MAX(version), 0)
+                FROM model_registry
+                WHERE model_type = ? AND target = ?
+                """,
+                (model_type, target),
+            )
+            row = cur.fetchone()
+        return int(row[0] or 0) + 1
+
+    def create_training_run(
+        self,
+        run_id: str,
+        created_at: str,
+        model_ids: list[str],
+        batch_ids: list[int],
+        settings_payload: dict[str, Any],
+    ) -> None:
+        with self._connect() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO training_runs (run_id, created_at, model_ids, batch_ids, settings_json)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    created_at,
+                    json.dumps(model_ids, ensure_ascii=False),
+                    json.dumps(batch_ids, ensure_ascii=False),
+                    json.dumps(settings_payload, ensure_ascii=False),
+                ),
+            )
+            conn.commit()
+
+    def list_training_runs(self, limit: int = 20) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT run_id, created_at, model_ids, batch_ids, settings_json
+                FROM training_runs
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (limit,),
+            )
+            rows = [dict(row) for row in cur.fetchall()]
+        for row in rows:
+            row["model_ids"] = self._deserialize_json_field(row.get("model_ids"), default=[])
+            row["batch_ids"] = self._deserialize_json_field(row.get("batch_ids"), default=[])
+            row["settings_json"] = self._deserialize_json_field(row.get("settings_json"), default={})
+        return rows
+
+    def summarize_models(self) -> dict[str, Any]:
+        models = self.list_models()
+        by_target: dict[str, dict[str, Any]] = {}
+        for model in models:
+            target = str(model["target"])
+            target_bucket = by_target.setdefault(
+                target,
+                {"champion": None, "challengers": [], "archived": []},
+            )
+            status = model.get("status")
+            if status == "champion" and target_bucket["champion"] is None:
+                target_bucket["champion"] = model
+            elif status == "challenger":
+                target_bucket["challengers"].append(model)
+            else:
+                target_bucket["archived"].append(model)
+
+        for bucket in by_target.values():
+            bucket["challengers"] = sorted(
+                bucket["challengers"],
+                key=lambda item: item.get("created_at", ""),
+                reverse=True,
+            )
+            bucket["archived"] = sorted(
+                bucket["archived"],
+                key=lambda item: item.get("created_at", ""),
+                reverse=True,
+            )
+
+        return {
+            "total_models": len(models),
+            "targets": by_target,
+            "training_runs": self.list_training_runs(limit=10),
+        }
 
     def get_predictions_for_batch(self, batch_id: int) -> list[dict[str, Any]]:
         with self._connect() as conn:
@@ -149,6 +255,21 @@ class ModelRegistry:
                 (batch_id,),
             )
             return [dict(row) for row in cur.fetchall()]
+
+    def _deserialize_json_field(self, payload: Any, default: Any) -> Any:
+        if payload in (None, ""):
+            return default
+        if not isinstance(payload, str):
+            return payload
+        try:
+            return json.loads(payload)
+        except json.JSONDecodeError:
+            return default
+
+    def _deserialize_model_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        row["metrics_json"] = self._deserialize_json_field(row.get("metrics_json"), default={})
+        row["features_json"] = self._deserialize_json_field(row.get("features_json"), default={})
+        return row
 
 
 class PredictionRepository:
