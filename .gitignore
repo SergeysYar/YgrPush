@@ -3,3 +3,7 @@ __pycache__/
 .vscode/
 .idea/
 *.pyc
+*.db
+*.db-journal
+.artifacts/
+.reports/
