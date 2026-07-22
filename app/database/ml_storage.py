@@ -94,8 +94,37 @@ class ModelRegistry:
     def list_models(self) -> list[dict[str, Any]]:
         with self._connect() as conn:
             cur = conn.cursor()
-            cur.execute("SELECT model_id, model_type, target, created_at, status FROM model_registry ORDER BY created_at DESC")
+            cur.execute("SELECT model_id, model_type, target, created_at, status, artifact_path, metrics_json, features_json FROM model_registry ORDER BY created_at DESC")
             return [dict(row) for row in cur.fetchall()]
+
+    def get_model(self, model_id: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM model_registry WHERE model_id = ?", (model_id,))
+            row = cur.fetchone()
+            return dict(row) if row else None
+
+    def get_champion_models(self) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM model_registry WHERE status = 'champion' ORDER BY created_at DESC")
+            return [dict(row) for row in cur.fetchall()]
+
+    def get_latest_model(self, target: str, model_type: str | None = None) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            cur = conn.cursor()
+            if model_type:
+                cur.execute(
+                    "SELECT * FROM model_registry WHERE target = ? AND model_type = ? ORDER BY created_at DESC LIMIT 1",
+                    (target, model_type),
+                )
+            else:
+                cur.execute(
+                    "SELECT * FROM model_registry WHERE target = ? ORDER BY created_at DESC LIMIT 1",
+                    (target,),
+                )
+            row = cur.fetchone()
+            return dict(row) if row else None
 
     def promote_model(self, model_id: str) -> None:
         with self._connect() as conn:

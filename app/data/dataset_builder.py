@@ -10,6 +10,7 @@ from app.data.cleaner import normalize_measurement_row
 from app.data.target_loader import load_targets, TargetProtocolPolicy
 from app.data.component_normalizer import ComponentNormalizer
 from app.data.data_quality import DataQualityInspector
+from app.features.batch_features import BatchFeatureBuilder
 
 
 class DatasetBuilder:
@@ -42,6 +43,9 @@ class DatasetBuilder:
 
         components = pd.DataFrame()
         if not measurements.empty:
+            measurements = pd.DataFrame(
+                [normalize_measurement_row(row) for row in measurements.to_dict(orient="records")]
+            )
             components = self.normalizer.normalize_batch_components(measurements)
 
         targets = load_targets(batch_id, self.db_path, settings.target_protocol_policy)
@@ -82,6 +86,7 @@ class DatasetBuilder:
             """
             batch_ids = pd.read_sql_query(batch_ids_sql, conn)["batchID"].unique()
 
+        builder = BatchFeatureBuilder()
         rows = []
         for batch_id in batch_ids:
             batch_data = self.load_batch_data(int(batch_id))
@@ -91,11 +96,11 @@ class DatasetBuilder:
             if measurements.empty:
                 continue
 
-            # Basic batch features (will be expanded in Stage 4)
+            features = builder.build_full_batch_features(measurements)
             batch_row = {
                 "batch_id": int(batch_id),
-                "num_steps": len(measurements),
                 "has_targets": len(targets) > 0,
+                **features,
                 "target_ph": float(targets[0]["ph"]) if targets and targets[0].get("ph") else None,
                 "target_viscosity": float(targets[0]["viscosity"]) if targets and targets[0].get("viscosity") else None,
                 "target_chlorides": float(targets[0]["chlorides"]) if targets and targets[0].get("chlorides") else None,

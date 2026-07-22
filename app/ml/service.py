@@ -14,7 +14,9 @@ from app.ml.pls import PLSModel
 from app.ml.bayesian import BayesianRidgeModel
 from app.ml.validation import CVValidator, MetricsCalculator
 from app.ml.exporter import CVResultsExporter
+from app.ml.registry import ModelManager
 from app.database.ml_storage import ModelRegistry
+from datetime import datetime
 
 
 class TrainingPipeline:
@@ -25,6 +27,21 @@ class TrainingPipeline:
         self.ml_storage_path = Path(ml_storage_path or settings.ml_storage_path)
         self.dataset_builder = DatasetBuilder(self.db_path)
         self.ml_registry = ModelRegistry(str(self.ml_storage_path))
+        self.model_manager = ModelManager(str(self.ml_storage_path))
+        self._artifact_dir = self.ml_storage_path.parent / "artifacts"
+        self._artifact_dir.mkdir(parents=True, exist_ok=True)
+
+    def _persist_model(self, model: Any, model_type: str, target: str, features: dict[str, Any], metrics: dict[str, Any]) -> str:
+        artifact_name = f"{model_type}_{target}_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.joblib"
+        artifact_path = self._artifact_dir / artifact_name
+        model.save(str(artifact_path))
+        return self.model_manager.register_model(
+            model_type=model_type,
+            target=target,
+            artifact_path=str(artifact_path),
+            features=features,
+            metrics=metrics,
+        )
 
     def prepare_training_data(self) -> dict[str, Any]:
         """Prepare training dataset for all targets.
@@ -83,14 +100,23 @@ class TrainingPipeline:
 
             cv_result = cv_validator.validate_model(model, X, y, target_name=f"baseline_{target}")
 
+            model_id = self._persist_model(
+                model=model,
+                model_type="baseline",
+                target=target,
+                features={"feature_names": X.columns.tolist()},
+                metrics=cv_result["cv_metrics"],
+            )
+
             results[target] = {
                 "model": model,
+                "model_id": model_id,
                 "cv_result": cv_result,
                 "n_samples": len(data),
                 "n_folds": cv_result["cv_metrics"]["n_folds"],
             }
 
-            print(f"Baseline {target}:")
+            print(f"Baseline {target} (model_id={model_id}):")
             print(f"  MAE: {cv_result['cv_metrics']['mae']:.4f}")
             print(f"  RMSE: {cv_result['cv_metrics']['rmse']:.4f}")
             print(f"  Median AE: {cv_result['cv_metrics']['median_ae']:.4f}")
@@ -116,14 +142,23 @@ class TrainingPipeline:
 
             cv_result = cv_validator.validate_model(model, X, y, target_name=f"ridge_{target}")
 
+            model_id = self._persist_model(
+                model=model,
+                model_type="ridge",
+                target=target,
+                features={"feature_names": X.columns.tolist()},
+                metrics=cv_result["cv_metrics"],
+            )
+
             results[target] = {
                 "model": model,
+                "model_id": model_id,
                 "cv_result": cv_result,
                 "n_samples": len(data),
                 "n_folds": cv_result["cv_metrics"]["n_folds"],
             }
 
-            print(f"Ridge {target}:")
+            print(f"Ridge {target} (model_id={model_id}):")
             print(f"  MAE: {cv_result['cv_metrics']['mae']:.4f}")
             print(f"  RMSE: {cv_result['cv_metrics']['rmse']:.4f}")
             print(f"  Median AE: {cv_result['cv_metrics']['median_ae']:.4f}")
@@ -155,14 +190,25 @@ class TrainingPipeline:
             # For now, train on full data
             model.fit(X, y)
 
+            model_id = self._persist_model(
+                model=model,
+                model_type="pls_multivariate",
+                target="all",
+                features={"feature_names": X.columns.tolist()},
+                metrics={
+                    "n_samples": len(complete_data),
+                },
+            )
+
             results["pls_multivariate"] = {
                 "model": model,
+                "model_id": model_id,
                 "n_samples": len(complete_data),
                 "targets": ["ph", "viscosity", "chlorides"],
                 "status": "trained",
             }
 
-            print(f"PLS: trained on {len(complete_data)} samples")
+            print(f"PLS: trained on {len(complete_data)} samples (model_id={model_id})")
 
         except Exception as e:
             print(f"PLS training failed: {e}")
@@ -188,14 +234,23 @@ class TrainingPipeline:
 
             cv_result = cv_validator.validate_model(model, X, y, target_name=f"bayesian_{target}")
 
+            model_id = self._persist_model(
+                model=model,
+                model_type="bayesian",
+                target=target,
+                features={"feature_names": X.columns.tolist()},
+                metrics=cv_result["cv_metrics"],
+            )
+
             results[target] = {
                 "model": model,
+                "model_id": model_id,
                 "cv_result": cv_result,
                 "n_samples": len(data),
                 "n_folds": cv_result["cv_metrics"]["n_folds"],
             }
 
-            print(f"BayesianRidge {target}:")
+            print(f"BayesianRidge {target} (model_id={model_id}):")
             print(f"  MAE: {cv_result['cv_metrics']['mae']:.4f}")
             print(f"  RMSE: {cv_result['cv_metrics']['rmse']:.4f}")
             print(f"  Median AE: {cv_result['cv_metrics']['median_ae']:.4f}")

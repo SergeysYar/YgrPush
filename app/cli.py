@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -25,7 +26,7 @@ def _build_parser() -> argparse.ArgumentParser:
     predict_parser.add_argument("--batch-id", type=int, required=True)
     predict_parser.add_argument("--up-to-step", type=int)
     promote_parser = subparsers.add_parser("promote-model", help="Promote model to champion status")
-    promote_parser.add_argument("model-id", type=str, required=True)
+    promote_parser.add_argument("model-id", type=str)
     subparsers.add_parser("list-models", help="List available trained models")
     subparsers.add_parser("update-actuals", help="Update actual values for predictions")
     subparsers.add_parser("run-api", help="Run FastAPI server")
@@ -78,19 +79,41 @@ def main(argv: list[str] | None = None) -> int:
             print("\nModels trained successfully")
             return 0
         case "evaluate":
-            print("Evaluating models... TODO")
+            from .ml.service import TrainingPipeline
+
+            pipeline = TrainingPipeline(settings.db_path, settings.ml_storage_path)
+            results = pipeline.train_all()
+            pipeline.save_cv_report(results)
+            print("\nEvaluation complete")
             return 0
         case "predict":
-            print(f"Predicting batch {args.batch_id} up to step {args.up_to_step}")
-            return 0
+            from .ml.prediction_service import PredictionService
+
+            service = PredictionService(settings.db_path, settings.ml_storage_path)
+            try:
+                service.train_if_no_model()
+                prediction = service.predict_batch(args.batch_id, up_to_step_order=args.up_to_step)
+                print(json.dumps(prediction, indent=2, ensure_ascii=False))
+                return 0
+            except ValueError as error:
+                print(f"Error: {error}")
+                return 1
         case "list-models":
-            print("Listing models... TODO")
+            from .database.ml_storage import ModelRegistry
+
+            registry = ModelRegistry(settings.ml_storage_path)
+            models = registry.list_models()
+            print(json.dumps(models, indent=2, ensure_ascii=False))
             return 0
         case "promote-model":
-            print(f"Promoting model {args.model_id}... TODO")
+            from .database.ml_storage import ModelRegistry
+
+            registry = ModelRegistry(settings.ml_storage_path)
+            registry.promote_model(args.model_id)
+            print(f"Promoted model {args.model_id}")
             return 0
         case "update-actuals":
-            print("Updating actuals... TODO")
+            print("Updating actuals is not implemented yet.")
             return 0
         case "run-api":
             return _run_api()
