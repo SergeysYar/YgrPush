@@ -253,3 +253,56 @@ def test_predict_route_returns_business_status(monkeypatch, tmp_path):
     assert payload["predictions"]["ph"]["confidence"] == "high"
     assert payload["predictions"]["ph"]["training_batches"] == 12
     app.dependency_overrides.clear()
+
+
+def test_predict_route_returns_similar_batches_payload(monkeypatch, tmp_path):
+    db_path = tmp_path / "api_test.db"
+    _create_test_db(db_path)
+
+    def override_settings():
+        return Settings(db_path=db_path, ml_storage_path=tmp_path / "ml_storage.db")
+
+    monkeypatch.setattr(
+        "app.ml.prediction_service.PredictionService.train_if_no_model",
+        lambda self: None,
+    )
+    monkeypatch.setattr(
+        "app.ml.prediction_service.PredictionService._predict_target",
+        lambda self, target, X, batch_id=None, quality=None: {
+            "value": 5.9,
+            "lower": 5.8,
+            "upper": 6.0,
+            "confidence": "medium",
+            "model": "stub-model",
+            "status": "normal",
+            "training_batches": 8,
+            "top_factors": ["Последний измеренный pH"],
+        },
+    )
+    monkeypatch.setattr(
+        "app.ml.prediction_service.PredictionService._build_similar_batches",
+        lambda self, current_features, batch_id, limit=5: [
+            {
+                "batch_id": 2,
+                "batch_number": "B-002",
+                "product_name": "Test Shampoo",
+                "production_date": "2026-07-21",
+                "distance": 0.15,
+                "ph": 5.8,
+                "viscosity": 3150.0,
+                "chlorides": 1.1,
+            }
+        ],
+    )
+
+    app.dependency_overrides[get_settings] = override_settings
+    client = TestClient(app)
+
+    response = client.post("/api/v1/predict/batch/1")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["similar_batches"][0]["batch_id"] == 2
+    assert payload["similar_batches"][0]["batch_number"] == "B-002"
+    assert payload["predictions"]["ph"]["top_factors"] == ["Последний измеренный pH"]
+    app.dependency_overrides.clear()

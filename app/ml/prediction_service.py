@@ -70,6 +70,22 @@ class PredictionService:
         features = self.feature_builder.build_full_batch_features(measurements)
         return pd.DataFrame([features])
 
+    def _feature_labels(self) -> dict[str, str]:
+        return {
+            "num_steps": "Количество выполненных этапов",
+            "duration_sum": "Суммарная длительность этапов",
+            "average_ph": "Средний pH по выполненным этапам",
+            "first_ph": "Первый измеренный pH",
+            "last_ph": "Последний измеренный pH",
+            "min_ph": "Минимальный измеренный pH",
+            "max_ph": "Максимальный измеренный pH",
+            "component_mass_total": "Суммарная масса известных компонентов",
+            "water_steps": "Количество этапов воды",
+            "salt_steps": "Количество этапов соли",
+            "acid_steps": "Количество этапов кислоты",
+            "last_completed_step": "Порядок последнего выполненного этапа",
+        }
+
     def _make_interval(self, model: Any, X: pd.DataFrame, prediction: float) -> tuple[float, float, str]:
         if isinstance(model, BayesianRidgeModel) and getattr(model, "pipeline", None) is not None:
             bayesian = model.pipeline.named_steps.get("bayesian")
@@ -178,6 +194,25 @@ class PredictionService:
             return "medium"
         return "low"
 
+    def _top_factors(self, features: pd.DataFrame, limit: int = 5) -> list[str]:
+        if features.empty:
+            return []
+        feature_values = features.iloc[0].to_dict()
+        labels = self._feature_labels()
+        ranked = sorted(
+            feature_values.items(),
+            key=lambda item: abs(float(item[1] or 0.0)),
+            reverse=True,
+        )
+        result: list[str] = []
+        for feature_name, feature_value in ranked:
+            if abs(float(feature_value or 0.0)) <= 0:
+                continue
+            result.append(labels.get(feature_name, feature_name))
+            if len(result) >= limit:
+                break
+        return result
+
     def _predict_target(
         self,
         target: str,
@@ -223,7 +258,7 @@ class PredictionService:
             "model": model_meta["model_id"],
             "status": status,
             "training_batches": training_batches,
-            "top_factors": [],
+            "top_factors": self._top_factors(X),
         }
 
     def _build_similar_batches(self, current_features: dict[str, float], batch_id: int, limit: int = 5) -> list[dict[str, Any]]:
@@ -235,19 +270,35 @@ class PredictionService:
         if not feature_cols:
             return []
 
-        current_vector = np.array([current_features.get(col, 0.0) for col in feature_cols], dtype=float)
+        feature_frame = all_batches[feature_cols].fillna(0.0).astype(float)
+        means = feature_frame.mean()
+        stds = feature_frame.std(ddof=0).replace(0, 1.0)
+        normalized_frame = (feature_frame - means) / stds
+        current_vector = np.array(
+            [
+                (float(current_features.get(col, 0.0)) - float(means[col])) / float(stds[col])
+                for col in feature_cols
+            ],
+            dtype=float,
+        )
         distances = []
-        for _, row in all_batches.iterrows():
-            if int(row["batch_id"]) == batch_id:
+        for row_index, row in all_batches.iterrows():
+            candidate_batch_id = int(row["batch_id"])
+            if candidate_batch_id == batch_id:
                 continue
-            vector = np.array([float(row.get(col, 0.0)) for col in feature_cols], dtype=float)
+            vector = normalized_frame.iloc[row_index].to_numpy(dtype=float)
             distance = float(np.linalg.norm(vector - current_vector))
+            batch_meta = self.batch_repository.get_batch(candidate_batch_id) or {}
+            product_meta = self.batch_repository.get_product(batch_meta.get("product_id")) if batch_meta else None
             distances.append({
-                "batch_id": int(row["batch_id"]),
+                "batch_id": candidate_batch_id,
+                "batch_number": batch_meta.get("batch_number"),
+                "product_name": product_meta.get("name") if product_meta else None,
+                "production_date": batch_meta.get("production_date"),
                 "distance": distance,
-                "target_ph": row.get("target_ph"),
-                "target_viscosity": row.get("target_viscosity"),
-                "target_chlorides": row.get("target_chlorides"),
+                "ph": row.get("target_ph"),
+                "viscosity": row.get("target_viscosity"),
+                "chlorides": row.get("target_chlorides"),
             })
 
         return sorted(distances, key=lambda item: item["distance"])[:limit]

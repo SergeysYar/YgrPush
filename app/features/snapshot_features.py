@@ -24,11 +24,14 @@ class SnapshotBuilder:
         feature_builder = BatchFeatureBuilder()
 
         for idx in range(len(batch_df)):
-            features = feature_builder.build_checkpoint_features(batch_df, checkpoint_order=idx)
+            completed_steps = idx + 1
+            features = feature_builder.build_checkpoint_features(
+                batch_df, checkpoint_order=completed_steps
+            )
             snapshot = {
                 "batch_id": batch_id,
-                "checkpoint_order": idx + 1,
-                "completed_steps": idx + 1,
+                "checkpoint_order": completed_steps,
+                "completed_steps": completed_steps,
                 "is_final_snapshot": idx == len(batch_df) - 1,
                 "features": features,
                 "targets": target_values or {}
