@@ -8,6 +8,7 @@ import pandas as pd
 
 from app.config import settings
 from app.data.dataset_builder import DatasetBuilder
+from app.data.target_loader import TargetProtocolPolicy
 from app.ml.baseline import BaselineModel
 from app.ml.ridge import RidgeModel
 from app.ml.pls import PLSModel
@@ -43,7 +44,11 @@ class TrainingPipeline:
             metrics=metrics,
         )
 
-    def prepare_training_data(self, snapshot_mode: bool = False) -> dict[str, Any]:
+    def prepare_training_data(
+        self,
+        snapshot_mode: bool = False,
+        protocol_policy: TargetProtocolPolicy | str | None = None,
+    ) -> dict[str, Any]:
         """Prepare training dataset for all targets.
         
         Returns dict with:
@@ -54,9 +59,13 @@ class TrainingPipeline:
         - complete_data: rows with all three targets (for PLS)
         """
         batch_df = (
-            self.dataset_builder.build_snapshot_features_dataset()
+            self.dataset_builder.build_snapshot_features_dataset(
+                protocol_policy=protocol_policy,
+            )
             if snapshot_mode
-            else self.dataset_builder.build_batch_features_dataset()
+            else self.dataset_builder.build_batch_features_dataset(
+                protocol_policy=protocol_policy,
+            )
         )
 
         training_data = {
@@ -292,7 +301,12 @@ class TrainingPipeline:
 
         return results
 
-    def train_all(self, snapshot_mode: bool = False) -> dict[str, Any]:
+    def train_all(
+        self,
+        snapshot_mode: bool = False,
+        protocol_policy: TargetProtocolPolicy | str | None = None,
+        model_types: list[str] | None = None,
+    ) -> dict[str, Any]:
         """Execute full training pipeline with all models."""
         print("=" * 60)
         print("TRAINING PIPELINE - Stage 5")
@@ -300,7 +314,10 @@ class TrainingPipeline:
 
         # Prepare data
         print("\n[1/5] Preparing training data...")
-        training_data = self.prepare_training_data(snapshot_mode=snapshot_mode)
+        training_data = self.prepare_training_data(
+            snapshot_mode=snapshot_mode,
+            protocol_policy=protocol_policy,
+        )
 
         print(f"  Total batches: {len(training_data['all_batches'])}")
         print(f"  pH labeled: {len(training_data['ph_data'])}")
@@ -308,21 +325,39 @@ class TrainingPipeline:
         print(f"  Chlorides labeled: {len(training_data['chlorides_data'])}")
         print(f"  Complete (all 3 targets): {len(training_data['complete_data'])}")
         print(f"  Snapshot mode: {snapshot_mode}")
+        print(f"  Protocol policy: {protocol_policy or settings.target_protocol_policy}")
 
         all_results = {}
+        selected_model_types = set(model_types or ["baseline", "ridge", "pls", "bayesian_ridge"])
 
         # Train models
         print("\n[2/5] Training Baseline models...")
-        all_results["baseline"] = self.train_and_validate_baseline(training_data)
+        all_results["baseline"] = (
+            self.train_and_validate_baseline(training_data)
+            if "baseline" in selected_model_types
+            else {}
+        )
 
         print("\n[3/5] Training Ridge models...")
-        all_results["ridge"] = self.train_and_validate_ridge(training_data)
+        all_results["ridge"] = (
+            self.train_and_validate_ridge(training_data)
+            if "ridge" in selected_model_types
+            else {}
+        )
 
         print("\n[4/5] Training PLS model...")
-        all_results["pls"] = self.train_and_validate_pls(training_data)
+        all_results["pls"] = (
+            self.train_and_validate_pls(training_data)
+            if "pls" in selected_model_types
+            else {}
+        )
 
         print("\n[5/5] Training BayesianRidge models...")
-        all_results["bayesian"] = self.train_and_validate_bayesian(training_data)
+        all_results["bayesian"] = (
+            self.train_and_validate_bayesian(training_data)
+            if "bayesian_ridge" in selected_model_types
+            else {}
+        )
 
         print("\n" + "=" * 60)
         print("TRAINING COMPLETE")

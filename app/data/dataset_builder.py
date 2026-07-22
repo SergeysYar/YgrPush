@@ -30,7 +30,11 @@ class DatasetBuilder:
             df = pd.read_sql_query("SELECT * FROM measurements", conn)
         return df
 
-    def load_batch_data(self, batch_id: int) -> dict[str, Any]:
+    def load_batch_data(
+        self,
+        batch_id: int,
+        protocol_policy: TargetProtocolPolicy | str | None = None,
+    ) -> dict[str, Any]:
         """Load all data for a specific batch.
         
         Returns dict with:
@@ -55,7 +59,11 @@ class DatasetBuilder:
                 component_lookup=self.batch_repository.get_component_lookup(),
             )
 
-        targets = load_targets(batch_id, self.db_path, settings.target_protocol_policy)
+        targets = load_targets(
+            batch_id,
+            self.db_path,
+            protocol_policy or settings.target_protocol_policy,
+        )
 
         return {
             "batch_id": batch_id,
@@ -81,7 +89,10 @@ class DatasetBuilder:
 
         return pd.DataFrame(normalized)
 
-    def build_batch_features_dataset(self) -> pd.DataFrame:
+    def build_batch_features_dataset(
+        self,
+        protocol_policy: TargetProtocolPolicy | str | None = None,
+    ) -> pd.DataFrame:
         """Build dataset with one row per batch.
         
         This dataset contains aggregated features for each complete batch.
@@ -130,7 +141,10 @@ class DatasetBuilder:
 
         return pd.DataFrame(rows)
 
-    def build_snapshot_features_dataset(self) -> pd.DataFrame:
+    def build_snapshot_features_dataset(
+        self,
+        protocol_policy: TargetProtocolPolicy | str | None = None,
+    ) -> pd.DataFrame:
         """Build dataset with one row per snapshot of each batch.
 
         Each batch produces incremental snapshots from first completed step
@@ -145,7 +159,10 @@ class DatasetBuilder:
 
         rows = []
         for batch_id in batch_ids:
-            batch_data = self.load_batch_data(int(batch_id))
+            batch_data = self.load_batch_data(
+                int(batch_id),
+                protocol_policy=protocol_policy,
+            )
             measurements = batch_data["measurements"]
             targets = batch_data["targets"]
 

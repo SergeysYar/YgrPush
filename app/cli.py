@@ -20,8 +20,41 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("inspect-db", help="Inspect production SQLite database")
     subparsers.add_parser("build-dataset", help="Build training dataset from production DB")
     subparsers.add_parser("validate-data", help="Run data validation checks")
-    subparsers.add_parser("train", help="Train registered models")
-    subparsers.add_parser("evaluate", help="Run evaluation and produce reports")
+    train_parser = subparsers.add_parser("train", help="Train registered models")
+    train_parser.add_argument(
+        "--model-types",
+        nargs="+",
+        default=["baseline", "ridge", "pls", "bayesian_ridge"],
+        choices=["baseline", "ridge", "pls", "bayesian_ridge"],
+    )
+    train_parser.add_argument(
+        "--protocol-policy",
+        choices=["latest", "first", "all"],
+        default=settings.target_protocol_policy,
+    )
+    train_parser.add_argument(
+        "--batch-mode",
+        action="store_true",
+        help="Use one row per batch instead of snapshot training",
+    )
+
+    evaluate_parser = subparsers.add_parser("evaluate", help="Run evaluation and produce reports")
+    evaluate_parser.add_argument(
+        "--model-types",
+        nargs="+",
+        default=["baseline", "ridge", "pls", "bayesian_ridge"],
+        choices=["baseline", "ridge", "pls", "bayesian_ridge"],
+    )
+    evaluate_parser.add_argument(
+        "--protocol-policy",
+        choices=["latest", "first", "all"],
+        default=settings.target_protocol_policy,
+    )
+    evaluate_parser.add_argument(
+        "--batch-mode",
+        action="store_true",
+        help="Use one row per batch instead of snapshot evaluation",
+    )
     predict_parser = subparsers.add_parser("predict", help="Predict for one batch")
     predict_parser.add_argument("--batch-id", type=int, required=True)
     predict_parser.add_argument("--up-to-step", type=int)
@@ -74,7 +107,11 @@ def main(argv: list[str] | None = None) -> int:
         case "train":
             from .ml.service import TrainingPipeline
             pipeline = TrainingPipeline(settings.db_path, settings.ml_storage_path)
-            results = pipeline.train_all(snapshot_mode=True)
+            results = pipeline.train_all(
+                snapshot_mode=not args.batch_mode,
+                protocol_policy=args.protocol_policy,
+                model_types=args.model_types,
+            )
             pipeline.save_cv_report(results)
             print("\nModels trained successfully")
             return 0
@@ -82,7 +119,11 @@ def main(argv: list[str] | None = None) -> int:
             from .ml.service import TrainingPipeline
 
             pipeline = TrainingPipeline(settings.db_path, settings.ml_storage_path)
-            results = pipeline.train_all(snapshot_mode=True)
+            results = pipeline.train_all(
+                snapshot_mode=not args.batch_mode,
+                protocol_policy=args.protocol_policy,
+                model_types=args.model_types,
+            )
             pipeline.save_cv_report(results)
             print("\nEvaluation complete")
             return 0

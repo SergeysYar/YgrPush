@@ -206,7 +206,10 @@ def test_train_route(monkeypatch, tmp_path):
     def override_settings():
         return Settings(db_path=db_path, ml_storage_path=tmp_path / "ml_storage.db")
 
-    def fake_train_all(self, snapshot_mode=False):
+    def fake_train_all(self, snapshot_mode=False, protocol_policy=None, model_types=None):
+        assert snapshot_mode is True
+        assert protocol_policy == "latest"
+        assert model_types == ["baseline"]
         return {
             "baseline": {
                 "ph": {
