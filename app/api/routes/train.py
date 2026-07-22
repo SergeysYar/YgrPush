@@ -13,7 +13,7 @@ router = APIRouter()
 
 class TrainRequest(BaseModel):
     model_types: list[str] = Field(
-        default_factory=lambda: ["baseline", "ridge", "pls", "bayesian_ridge"]
+        default_factory=lambda: ["baseline", "ridge", "pls", "bayesian_ridge", "catboost"]
     )
     protocol_policy: str = "latest"
     snapshot_mode: bool = True
@@ -21,7 +21,7 @@ class TrainRequest(BaseModel):
     @field_validator("model_types")
     @classmethod
     def validate_model_types(cls, value: list[str]) -> list[str]:
-        allowed = {"baseline", "ridge", "pls", "bayesian_ridge"}
+        allowed = {"baseline", "ridge", "pls", "bayesian_ridge", "catboost"}
         invalid = [item for item in value if item not in allowed]
         if invalid:
             raise ValueError(f"Unsupported model types: {', '.join(invalid)}")
@@ -48,6 +48,7 @@ def train_models(
         "ridge": "ridge",
         "pls": "pls",
         "bayesian_ridge": "bayesian",
+        "catboost": "catboost",
     }
     for model_name in payload.model_types:
         model_result = results.get(model_mapping[model_name], {})
@@ -71,7 +72,14 @@ def train_models(
                 metrics[model_name][target_name] = {
                     key: value
                     for key, value in target_result.items()
-                    if key in {"status", "n_samples", "targets"}
+                    if key in {
+                        "status",
+                        "reason",
+                        "n_samples",
+                        "targets",
+                        "required_batches",
+                        "available_batches",
+                    }
                 }
 
     return {

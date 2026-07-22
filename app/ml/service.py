@@ -14,6 +14,7 @@ from app.ml.baseline import BaselineModel
 from app.ml.ridge import RidgeModel
 from app.ml.pls import PLSModel
 from app.ml.bayesian import BayesianRidgeModel
+from app.ml.catboost_model import CatBoostModel
 from app.ml.validation import CVValidator, MetricsCalculator
 from app.ml.exporter import CVResultsExporter
 from app.ml.registry import ModelManager
@@ -302,6 +303,69 @@ class TrainingPipeline:
 
         return results
 
+    def train_and_validate_catboost(self, training_data: dict[str, Any]) -> dict[str, Any]:
+        """Train CatBoost models with cross-validation when dependency is available."""
+        results = {}
+
+        if not CatBoostModel.is_available():
+            for target in ("ph", "viscosity", "chlorides"):
+                results[target] = {
+                    "status": "unavailable",
+                    "reason": "catboost_not_installed",
+                }
+            return results
+
+        for target, data_key in [("ph", "ph_data"), ("viscosity", "viscosity_data"), ("chlorides", "chlorides_data")]:
+            if training_data[data_key].empty:
+                results[target] = None
+                continue
+
+            data = training_data[data_key]
+            unique_batches = int(data["batch_id"].nunique()) if "batch_id" in data.columns else len(data)
+            if unique_batches < settings.catboost_min_labeled_batches:
+                results[target] = {
+                    "status": "skipped",
+                    "reason": "insufficient_labeled_batches",
+                    "required_batches": settings.catboost_min_labeled_batches,
+                    "available_batches": unique_batches,
+                }
+                continue
+
+            X, y, group_ids, sample_weights = self._extract_features_and_targets(data, f"target_{target}")
+            model = CatBoostModel()
+            cv_validator = CVValidator(group_ids)
+            cv_result = cv_validator.validate_model(
+                model,
+                X,
+                y,
+                target_name=f"catboost_{target}",
+                sample_weight=sample_weights,
+            )
+
+            metrics_payload = {
+                **cv_result["cv_metrics"],
+                "n_training_batches": unique_batches,
+                "explanation_method": "shap" if CatBoostModel.is_shap_available() else "feature_importance",
+            }
+            model_id = self._persist_model(
+                model=model,
+                model_type="catboost",
+                target=target,
+                features={"feature_names": X.columns.tolist()},
+                metrics=metrics_payload,
+            )
+
+            results[target] = {
+                "model": model,
+                "model_id": model_id,
+                "cv_result": cv_result,
+                "n_samples": len(data),
+                "n_folds": cv_result["cv_metrics"]["n_folds"],
+                "status": "trained",
+            }
+
+        return results
+
     def train_all(
         self,
         snapshot_mode: bool = False,
@@ -314,7 +378,7 @@ class TrainingPipeline:
         print("=" * 60)
 
         # Prepare data
-        print("\n[1/5] Preparing training data...")
+        print("\n[1/6] Preparing training data...")
         training_data = self.prepare_training_data(
             snapshot_mode=snapshot_mode,
             protocol_policy=protocol_policy,
@@ -329,34 +393,41 @@ class TrainingPipeline:
         print(f"  Protocol policy: {protocol_policy or settings.target_protocol_policy}")
 
         all_results = {}
-        selected_model_types = set(model_types or ["baseline", "ridge", "pls", "bayesian_ridge"])
+        selected_model_types = set(model_types or ["baseline", "ridge", "pls", "bayesian_ridge", "catboost"])
 
         # Train models
-        print("\n[2/5] Training Baseline models...")
+        print("\n[2/6] Training Baseline models...")
         all_results["baseline"] = (
             self.train_and_validate_baseline(training_data)
             if "baseline" in selected_model_types
             else {}
         )
 
-        print("\n[3/5] Training Ridge models...")
+        print("\n[3/6] Training Ridge models...")
         all_results["ridge"] = (
             self.train_and_validate_ridge(training_data)
             if "ridge" in selected_model_types
             else {}
         )
 
-        print("\n[4/5] Training PLS model...")
+        print("\n[4/6] Training PLS model...")
         all_results["pls"] = (
             self.train_and_validate_pls(training_data)
             if "pls" in selected_model_types
             else {}
         )
 
-        print("\n[5/5] Training BayesianRidge models...")
+        print("\n[5/6] Training BayesianRidge models...")
         all_results["bayesian"] = (
             self.train_and_validate_bayesian(training_data)
             if "bayesian_ridge" in selected_model_types
+            else {}
+        )
+
+        print("\n[6/6] Training CatBoost models...")
+        all_results["catboost"] = (
+            self.train_and_validate_catboost(training_data)
+            if "catboost" in selected_model_types
             else {}
         )
 

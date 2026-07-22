@@ -16,6 +16,7 @@ from app.ml.baseline import BaselineModel
 from app.ml.ridge import RidgeModel
 from app.ml.bayesian import BayesianRidgeModel
 from app.ml.pls import PLSModel
+from app.ml.catboost_model import CatBoostModel
 
 
 MODEL_CLASSES = {
@@ -23,6 +24,7 @@ MODEL_CLASSES = {
     "ridge": RidgeModel,
     "bayesian": BayesianRidgeModel,
     "pls_multivariate": PLSModel,
+    "catboost": CatBoostModel,
 }
 
 

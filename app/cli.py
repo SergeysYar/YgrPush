@@ -24,8 +24,8 @@ def _build_parser() -> argparse.ArgumentParser:
     train_parser.add_argument(
         "--model-types",
         nargs="+",
-        default=["baseline", "ridge", "pls", "bayesian_ridge"],
-        choices=["baseline", "ridge", "pls", "bayesian_ridge"],
+        default=["baseline", "ridge", "pls", "bayesian_ridge", "catboost"],
+        choices=["baseline", "ridge", "pls", "bayesian_ridge", "catboost"],
     )
     train_parser.add_argument(
         "--protocol-policy",
@@ -42,8 +42,8 @@ def _build_parser() -> argparse.ArgumentParser:
     evaluate_parser.add_argument(
         "--model-types",
         nargs="+",
-        default=["baseline", "ridge", "pls", "bayesian_ridge"],
-        choices=["baseline", "ridge", "pls", "bayesian_ridge"],
+        default=["baseline", "ridge", "pls", "bayesian_ridge", "catboost"],
+        choices=["baseline", "ridge", "pls", "bayesian_ridge", "catboost"],
     )
     evaluate_parser.add_argument(
         "--protocol-policy",
