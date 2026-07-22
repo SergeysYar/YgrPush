@@ -6,6 +6,14 @@ from typing import Any
 
 from app.config import settings
 
+
+class ClosingConnection(sqlite3.Connection):
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        try:
+            super().__exit__(exc_type, exc_value, traceback)
+        finally:
+            self.close()
+
 CREATE_TABLES_SQL = [
     """
     CREATE TABLE IF NOT EXISTS model_registry (
@@ -80,7 +88,7 @@ class ModelRegistry:
         self._ensure_tables()
 
     def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, factory=ClosingConnection)
         conn.row_factory = sqlite3.Row
         return conn
 
@@ -149,7 +157,7 @@ class PredictionRepository:
         self._ensure_tables()
 
     def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, factory=ClosingConnection)
         conn.row_factory = sqlite3.Row
         return conn
 
@@ -246,6 +254,86 @@ class PredictionRepository:
                 (actual_value, prediction_id),
             )
             conn.commit()
+
+
+class DataQualityRepository:
+    def __init__(self, db_path: Path | str | None = None) -> None:
+        self.db_path = Path(db_path or settings.ml_storage_path)
+        self._ensure_tables()
+
+    def _connect(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self.db_path, factory=ClosingConnection)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    def _ensure_tables(self) -> None:
+        with self._connect() as conn:
+            cur = conn.cursor()
+            for ddl in CREATE_TABLES_SQL:
+                cur.execute(ddl)
+            conn.commit()
+
+    def save_issues(
+        self,
+        issues: list[dict[str, Any]],
+        created_at: str,
+    ) -> int:
+        if not issues:
+            return 0
+
+        with self._connect() as conn:
+            cur = conn.cursor()
+            for issue in issues:
+                batch_id = int(issue["batch_id"]) if issue.get("batch_id") is not None else 0
+                description = issue.get("description") or ""
+                field_name = issue.get("field_name")
+                measurement_id = issue.get("measurement_id")
+                value = issue.get("value")
+                if field_name:
+                    description = f"[field={field_name}] {description}".strip()
+                if measurement_id is not None:
+                    description = f"[measurement_id={measurement_id}] {description}".strip()
+                if value is not None:
+                    description = f"{description} [value={value}]".strip()
+
+                cur.execute(
+                    """
+                    INSERT INTO data_quality_issues (batch_id, issue_type, description, created_at)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (
+                        batch_id,
+                        issue["issue_type"],
+                        description,
+                        created_at,
+                    ),
+                )
+            conn.commit()
+            return len(issues)
+
+    def list_issues(
+        self,
+        batch_id: int | None = None,
+        issue_type: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            cur = conn.cursor()
+            sql = "SELECT issue_id, batch_id, issue_type, description, created_at FROM data_quality_issues"
+            params: list[Any] = []
+            conditions: list[str] = []
+            if batch_id is not None:
+                conditions.append("batch_id = ?")
+                params.append(batch_id)
+            if issue_type is not None:
+                conditions.append("issue_type = ?")
+                params.append(issue_type)
+            if conditions:
+                sql += " WHERE " + " AND ".join(conditions)
+            sql += " ORDER BY created_at DESC, issue_id DESC LIMIT ?"
+            params.append(limit)
+            cur.execute(sql, tuple(params))
+            return [dict(row) for row in cur.fetchall()]
 
 
 def initialize_ml_storage(db_path: Path | str | None = None, create_tables: bool = True) -> ModelRegistry | None:
