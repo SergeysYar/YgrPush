@@ -42,12 +42,7 @@ class DatasetBuilder:
         - components: DataFrame of normalized components
         - targets: Dict of target values (ph, viscosity, chlorides)
         """
-        with self.inspector._connect() as conn:
-            measurements = pd.read_sql_query(
-                "SELECT * FROM measurements WHERE batchID = ? ORDER BY id",
-                conn,
-                params=(batch_id,)
-            )
+        measurements = self.batch_repository.get_batch_measurements(batch_id)
 
         components = pd.DataFrame()
         if not measurements.empty:

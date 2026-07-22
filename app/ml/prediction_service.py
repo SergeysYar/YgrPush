@@ -407,9 +407,22 @@ class PredictionService:
             raise ValueError(f"Batch {batch_id} not found or contains no measurements")
 
         if up_to_step_order is not None:
-            measurements = measurements.iloc[:up_to_step_order]
+            if (
+                "loading_process_step_order" in measurements.columns
+                and measurements["loading_process_step_order"].notna().any()
+            ):
+                measurements = measurements[
+                    measurements["loading_process_step_order"].fillna(float("inf")) <= up_to_step_order
+                ]
+            else:
+                measurements = measurements.iloc[:up_to_step_order]
         if up_to_measurement_id is not None:
             measurements = measurements[measurements["id"] <= up_to_measurement_id]
+
+        if measurements.empty:
+            raise ValueError(
+                f"Batch {batch_id} has no completed measurements for the requested checkpoint"
+            )
 
         features = self._build_feature_vector(measurements)
         quality = self._get_data_quality(measurements)
@@ -493,4 +506,7 @@ class PredictionService:
             return
 
         pipeline = TrainingPipeline(self.db_path, self.ml_storage_path)
-        pipeline.train_all()
+        pipeline.train_all(
+            snapshot_mode=True,
+            protocol_policy=settings.target_protocol_policy,
+        )

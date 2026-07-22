@@ -50,6 +50,18 @@ def _create_snapshot_db(db_path):
     )
     cur.execute(
         """
+        CREATE TABLE Loading_Process (
+            loading_step_id INTEGER PRIMARY KEY,
+            batch_id INTEGER,
+            step_order INTEGER,
+            stage TEXT,
+            status TEXT,
+            type_id INTEGER
+        )
+        """
+    )
+    cur.execute(
+        """
         CREATE TABLE Products (
             product_id INTEGER PRIMARY KEY,
             name TEXT,
@@ -74,10 +86,16 @@ def _create_snapshot_db(db_path):
         """
     )
     cur.execute(
-        "INSERT INTO measurements VALUES (1, '2026-07-20T10:00:00', '1', 101, 'water', 501, 10.0, 5.5, 5.6, 10.0)"
+        "INSERT INTO measurements VALUES (1, '2026-07-20T10:30:00', '1', 101, 'water', 501, 10.0, 5.5, 5.6, 10.0)"
     )
     cur.execute(
-        "INSERT INTO measurements VALUES (2, '2026-07-20T10:15:00', '1', 102, 'salt', 601, 3.0, 5.7, 5.9, 20.0)"
+        "INSERT INTO measurements VALUES (2, '2026-07-20T10:00:00', '1', 102, 'salt', 601, 3.0, 5.7, 5.9, 20.0)"
+    )
+    cur.execute(
+        "INSERT INTO Loading_Process VALUES (101, 1, 2, 'mix', 'done', 1)"
+    )
+    cur.execute(
+        "INSERT INTO Loading_Process VALUES (102, 1, 1, 'measure', 'done', 2)"
     )
     cur.execute(
         "INSERT INTO Testing_Protocols VALUES (1001, 10, '2026-07-21', '5,9', '1,2', '3200', 1, 1, 98.0)"
@@ -111,3 +129,14 @@ def test_build_snapshot_features_dataset(tmp_path):
     assert dataset["product_category"].tolist() == ["daily", "daily"]
     assert dataset["product_base"].tolist() == ["water", "water"]
     assert dataset["batch_number"].tolist() == ["B-001", "B-001"]
+
+
+def test_load_batch_data_respects_loading_process_step_order(tmp_path):
+    db_path = tmp_path / "snapshot_test.db"
+    _create_snapshot_db(db_path)
+
+    batch_data = DatasetBuilder(db_path).load_batch_data(1)
+    measurements = batch_data["measurements"]
+
+    assert measurements["loading_step_id"].tolist() == [102, 101]
+    assert measurements["loading_process_step_order"].tolist() == [1, 2]
