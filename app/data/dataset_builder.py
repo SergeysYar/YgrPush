@@ -6,6 +6,7 @@ from typing import Any
 
 from app.config import settings
 from app.database.source import DatabaseInspector
+from app.database.repositories import BatchRepository
 from app.data.cleaner import normalize_measurement_row
 from app.data.target_loader import load_targets, TargetProtocolPolicy
 from app.data.component_normalizer import ComponentNormalizer
@@ -18,6 +19,7 @@ class DatasetBuilder:
     def __init__(self, db_path: Path | str | None = None) -> None:
         self.db_path = Path(db_path or settings.db_path)
         self.inspector = DatabaseInspector(self.db_path)
+        self.batch_repository = BatchRepository(self.db_path)
         self.normalizer = ComponentNormalizer()
         self.quality_inspector = DataQualityInspector()
         self.snapshot_builder = SnapshotBuilder()
@@ -99,9 +101,23 @@ class DatasetBuilder:
                 continue
 
             features = builder.build_full_batch_features(measurements)
+            batch_meta = self.batch_repository.get_batch(int(batch_id)) or {}
+            product_meta = self.batch_repository.get_product(batch_meta.get("product_id")) if batch_meta else None
             batch_row = {
                 "batch_id": int(batch_id),
                 "has_targets": len(targets) > 0,
+                "product_id": batch_meta.get("product_id"),
+                "batch_number": batch_meta.get("batch_number"),
+                "production_date": batch_meta.get("production_date"),
+                "batch_status": batch_meta.get("status"),
+                "product_name": product_meta.get("name") if product_meta else None,
+                "product_category": product_meta.get("category") if product_meta else None,
+                "product_base": product_meta.get("base") if product_meta else None,
+                "product_base_code": product_meta.get("base_code") if product_meta else None,
+                "viscosity_thickener": product_meta.get("viscosity_thickener") if product_meta else None,
+                "viscosity_softener": product_meta.get("viscosity_softener") if product_meta else None,
+                "ph_corrector": product_meta.get("ph_corrector") if product_meta else None,
+                "viscosity_adjustment": product_meta.get("viscosity_adjustment") if product_meta else None,
                 **features,
                 "target_ph": float(targets[0]["ph"]) if targets and targets[0].get("ph") else None,
                 "target_viscosity": float(targets[0]["viscosity"]) if targets and targets[0].get("viscosity") else None,
@@ -149,11 +165,25 @@ class DatasetBuilder:
             if not snapshots:
                 continue
 
+            batch_meta = self.batch_repository.get_batch(int(batch_id)) or {}
+            product_meta = self.batch_repository.get_product(batch_meta.get("product_id")) if batch_meta else None
             snapshot_weight = 1.0 / len(snapshots)
             for snapshot in snapshots:
                 rows.append(
                     {
                         "batch_id": int(batch_id),
+                        "product_id": batch_meta.get("product_id"),
+                        "batch_number": batch_meta.get("batch_number"),
+                        "production_date": batch_meta.get("production_date"),
+                        "batch_status": batch_meta.get("status"),
+                        "product_name": product_meta.get("name") if product_meta else None,
+                        "product_category": product_meta.get("category") if product_meta else None,
+                        "product_base": product_meta.get("base") if product_meta else None,
+                        "product_base_code": product_meta.get("base_code") if product_meta else None,
+                        "viscosity_thickener": product_meta.get("viscosity_thickener") if product_meta else None,
+                        "viscosity_softener": product_meta.get("viscosity_softener") if product_meta else None,
+                        "ph_corrector": product_meta.get("ph_corrector") if product_meta else None,
+                        "viscosity_adjustment": product_meta.get("viscosity_adjustment") if product_meta else None,
                         "checkpoint_order": int(snapshot["checkpoint_order"]),
                         "completed_steps": int(snapshot["completed_steps"]),
                         "is_final_snapshot": bool(snapshot["is_final_snapshot"]),

@@ -84,7 +84,7 @@ class TrainingPipeline:
         feature_cols = [
             col
             for col in feature_cols
-            if col not in {"batch_id", "has_targets", "snapshot_weight"}
+            if col not in {"batch_id", "has_targets", "snapshot_weight", "batch_number", "production_date", "batch_status", "product_name"}
         ]
 
         X = data[feature_cols].fillna(0)  # Impute missing features with 0
