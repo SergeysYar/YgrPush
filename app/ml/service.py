@@ -73,7 +73,11 @@ class TrainingPipeline:
 
         return training_data
 
-    def _extract_features_and_targets(self, data: pd.DataFrame, target_col: str) -> tuple[pd.DataFrame, np.ndarray, np.ndarray]:
+    def _extract_features_and_targets(
+        self,
+        data: pd.DataFrame,
+        target_col: str,
+    ) -> tuple[pd.DataFrame, np.ndarray, np.ndarray, np.ndarray | None]:
         """Extract X and y, return with batch_ids for grouping."""
         # Feature columns: all except batch_id, has_targets, and target_* columns
         feature_cols = [col for col in data.columns if not col.startswith("target_")]
@@ -86,8 +90,9 @@ class TrainingPipeline:
         X = data[feature_cols].fillna(0)  # Impute missing features with 0
         y = data[target_col].values
         group_ids = data["batch_id"].values
+        sample_weights = data["snapshot_weight"].values if "snapshot_weight" in data.columns else None
 
-        return X, y, group_ids
+        return X, y, group_ids, sample_weights
 
     def train_and_validate_baseline(self, training_data: dict[str, Any], reports_dir: Path | None = None) -> dict[str, Any]:
         """Train Baseline models with cross-validation."""
@@ -100,13 +105,19 @@ class TrainingPipeline:
                 continue
 
             data = training_data[data_key]
-            X, y, group_ids = self._extract_features_and_targets(data, f"target_{target}")
+            X, y, group_ids, sample_weights = self._extract_features_and_targets(data, f"target_{target}")
 
             # Baseline doesn't use features, just global mean
             model = BaselineModel()
             cv_validator = CVValidator(group_ids)
 
-            cv_result = cv_validator.validate_model(model, X, y, target_name=f"baseline_{target}")
+            cv_result = cv_validator.validate_model(
+                model,
+                X,
+                y,
+                target_name=f"baseline_{target}",
+                sample_weight=sample_weights,
+            )
 
             model_id = self._persist_model(
                 model=model,
@@ -143,12 +154,18 @@ class TrainingPipeline:
                 continue
 
             data = training_data[data_key]
-            X, y, group_ids = self._extract_features_and_targets(data, f"target_{target}")
+            X, y, group_ids, sample_weights = self._extract_features_and_targets(data, f"target_{target}")
 
             model = RidgeModel(alpha=1.0)
             cv_validator = CVValidator(group_ids)
 
-            cv_result = cv_validator.validate_model(model, X, y, target_name=f"ridge_{target}")
+            cv_result = cv_validator.validate_model(
+                model,
+                X,
+                y,
+                target_name=f"ridge_{target}",
+                sample_weight=sample_weights,
+            )
 
             model_id = self._persist_model(
                 model=model,
@@ -187,7 +204,7 @@ class TrainingPipeline:
         print(f"Training PLS on {len(complete_data)} complete samples (all 3 targets)")
 
         # PLS expects multivariate output
-        X, _, group_ids = self._extract_features_and_targets(complete_data, "target_ph")
+        X, _, group_ids, sample_weights = self._extract_features_and_targets(complete_data, "target_ph")
         y = complete_data[["target_ph", "target_viscosity", "target_chlorides"]].values
 
         try:
@@ -196,7 +213,10 @@ class TrainingPipeline:
 
             # For multivariate validation, we need custom logic
             # For now, train on full data
-            model.fit(X, y)
+            try:
+                model.fit(X, y, sample_weight=sample_weights)
+            except TypeError:
+                model.fit(X, y)
 
             model_id = self._persist_model(
                 model=model,
@@ -235,12 +255,18 @@ class TrainingPipeline:
                 continue
 
             data = training_data[data_key]
-            X, y, group_ids = self._extract_features_and_targets(data, f"target_{target}")
+            X, y, group_ids, sample_weights = self._extract_features_and_targets(data, f"target_{target}")
 
             model = BayesianRidgeModel()
             cv_validator = CVValidator(group_ids)
 
-            cv_result = cv_validator.validate_model(model, X, y, target_name=f"bayesian_{target}")
+            cv_result = cv_validator.validate_model(
+                model,
+                X,
+                y,
+                target_name=f"bayesian_{target}",
+                sample_weight=sample_weights,
+            )
 
             model_id = self._persist_model(
                 model=model,

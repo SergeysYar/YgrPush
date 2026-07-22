@@ -155,3 +155,35 @@ class TestCVValidator:
             assert "r2" in fold_result
             assert "test_group" in fold_result
             assert "n_test_samples" in fold_result
+
+    def test_cv_validation_preserves_dataframe_and_weights(self):
+        class WeightedRecordingModel:
+            def __init__(self):
+                self.seen_columns = None
+                self.seen_weights = None
+                self.mean = 0.0
+
+            def fit(self, X, y, sample_weight=None):
+                self.seen_columns = list(X.columns)
+                self.seen_weights = None if sample_weight is None else list(sample_weight)
+                self.mean = (
+                    float(np.average(y, weights=sample_weight))
+                    if sample_weight is not None
+                    else float(np.mean(y))
+                )
+
+            def predict(self, X):
+                return np.array([self.mean] * len(X))
+
+        X = pd.DataFrame({"feature_a": [1, 2, 3, 4], "feature_b": [10, 20, 30, 40]})
+        y = np.array([1.0, 2.0, 3.0, 4.0])
+        groups = [1, 1, 2, 2]
+        weights = np.array([0.5, 0.5, 0.5, 0.5])
+
+        model = WeightedRecordingModel()
+        validator = CVValidator(groups)
+        result = validator.validate_model(model, X, y, sample_weight=weights)
+
+        assert model.seen_columns == ["feature_a", "feature_b"]
+        assert model.seen_weights is not None
+        assert result["cv_metrics"]["n_samples"] == 4

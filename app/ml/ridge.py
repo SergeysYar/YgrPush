@@ -19,7 +19,7 @@ class RidgeModel:
         self.feature_names: list[str] = []
         self.transformed_feature_names: list[str] = []
 
-    def fit(self, X, y, categorical_features: list[str] | None = None) -> "RidgeModel":
+    def fit(self, X, y, categorical_features: list[str] | None = None, sample_weight=None) -> "RidgeModel":
         categorical_features = categorical_features or []
         numeric_features = [col for col in X.columns if col not in (categorical_features or [])]
         self.feature_names = list(X.columns)
@@ -33,7 +33,10 @@ class RidgeModel:
         self.pipeline = Pipeline(
             [("transformer", transformer), ("ridge", Ridge(alpha=self.alpha))]
         )
-        self.pipeline.fit(X, y)
+        if sample_weight is not None:
+            self.pipeline.fit(X, y, ridge__sample_weight=sample_weight)
+        else:
+            self.pipeline.fit(X, y)
         self._refresh_feature_names()
         return self
 

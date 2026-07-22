@@ -12,11 +12,17 @@ class BayesianRidgeModel:
     def __init__(self) -> None:
         self.pipeline: Pipeline | None = None
 
-    def fit(self, X, y) -> "BayesianRidgeModel":
+    def fit(self, X, y, sample_weight=None) -> "BayesianRidgeModel":
         self.pipeline = Pipeline(
             [("scaler", StandardScaler()), ("bayesian", BayesianRidge())]
         )
-        self.pipeline.fit(X, y)
+        try:
+            if sample_weight is not None:
+                self.pipeline.fit(X, y, bayesian__sample_weight=sample_weight)
+            else:
+                self.pipeline.fit(X, y)
+        except TypeError:
+            self.pipeline.fit(X, y)
         return self
 
     def predict(self, X):
