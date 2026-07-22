@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 from typing import Any
 import numpy as np
@@ -7,6 +8,7 @@ import pandas as pd
 
 from app.config import settings
 from app.data.dataset_builder import DatasetBuilder
+from app.database.repositories import BatchRepository
 from app.features.batch_features import BatchFeatureBuilder
 from app.database.ml_storage import ModelRegistry, PredictionRepository
 from app.ml.service import TrainingPipeline
@@ -32,6 +34,7 @@ class PredictionService:
         self.feature_builder = BatchFeatureBuilder()
         self.registry = ModelRegistry(self.ml_storage_path)
         self.prediction_repository = PredictionRepository(self.ml_storage_path)
+        self.batch_repository = BatchRepository(self.db_path)
 
     def _resolve_model_meta(self, target: str) -> dict[str, Any] | None:
         champions = self.registry.get_champion_models()
@@ -82,16 +85,116 @@ class PredictionService:
         upper = float(prediction + width)
         return lower, upper, "approximate"
 
-    def _predict_target(self, target: str, X: pd.DataFrame) -> dict[str, Any]:
+    def _parse_metrics(self, model_meta: dict[str, Any]) -> dict[str, Any]:
+        raw_metrics = model_meta.get("metrics_json")
+        if isinstance(raw_metrics, dict):
+            return raw_metrics
+        if not raw_metrics:
+            return {}
+        try:
+            return ast.literal_eval(raw_metrics)
+        except (ValueError, SyntaxError):
+            return {}
+
+    def _load_quality_standard(self, batch_id: int, target: str) -> tuple[float | None, float | None]:
+        batch = self.batch_repository.get_batch(batch_id)
+        if batch is None:
+            return None, None
+
+        product = self.batch_repository.get_product(batch.get("product_id"))
+        category = product.get("category") if product else None
+        if not category:
+            return None, None
+
+        try:
+            with self.batch_repository.inspector._connect() as conn:
+                query = """
+                SELECT min_value, max_value
+                FROM quality_targets
+                WHERE category = ? AND indicator = ?
+                LIMIT 1
+                """
+                row = pd.read_sql_query(query, conn, params=(category, target))
+        except Exception:
+            return None, None
+
+        if row.empty:
+            return None, None
+        min_value = row.iloc[0]["min_value"]
+        max_value = row.iloc[0]["max_value"]
+        return (
+            float(min_value) if min_value is not None else None,
+            float(max_value) if max_value is not None else None,
+        )
+
+    def _resolve_status(
+        self,
+        batch_id: int | None,
+        target: str,
+        value: float,
+        lower: float,
+        upper: float,
+    ) -> str:
+        if batch_id is None:
+            return "no_standard"
+        min_value, max_value = self._load_quality_standard(batch_id, target)
+        if min_value is None and max_value is None:
+            return "no_standard"
+
+        def inside(number: float) -> bool:
+            if min_value is not None and number < min_value:
+                return False
+            if max_value is not None and number > max_value:
+                return False
+            return True
+
+        if inside(lower) and inside(upper):
+            return "normal"
+        if inside(value):
+            return "risk"
+        return "high_risk"
+
+    def _resolve_confidence(
+        self,
+        training_batches: int,
+        lower: float,
+        upper: float,
+        prediction: float,
+        quality: dict[str, Any] | None = None,
+    ) -> str:
+        quality = quality or {}
+        issues = int(quality.get("measurements_with_issues", 0))
+        width = abs(upper - lower)
+        scale = max(abs(prediction), 1.0)
+        relative_width = width / scale
+
+        if (
+            training_batches >= settings.confidence_high_min_batches
+            and relative_width <= 0.25
+            and issues == 0
+        ):
+            return "high"
+        if training_batches >= max(5, settings.confidence_high_min_batches // 2) and relative_width <= 0.6:
+            return "medium"
+        return "low"
+
+    def _predict_target(
+        self,
+        target: str,
+        X: pd.DataFrame,
+        batch_id: int | None = None,
+        quality: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         model_meta = self._resolve_model_meta(target)
         if model_meta is None:
             return {
                 "value": None,
                 "lower": None,
                 "upper": None,
-                "confidence": "no_model",
+                "confidence": "low",
                 "model": None,
                 "status": "no_model_available",
+                "training_batches": 0,
             }
 
         model = self._load_model(model_meta)
@@ -106,7 +209,11 @@ class PredictionService:
         else:
             pred_value = float(raw_pred)
 
-        lower, upper, confidence = self._make_interval(model, X, pred_value)
+        lower, upper, _ = self._make_interval(model, X, pred_value)
+        metrics = self._parse_metrics(model_meta)
+        training_batches = int(metrics.get("n_samples") or metrics.get("n_training_batches") or 0)
+        confidence = self._resolve_confidence(training_batches, lower, upper, pred_value, quality)
+        status = self._resolve_status(batch_id, target, pred_value, lower, upper)
 
         return {
             "value": pred_value,
@@ -114,7 +221,9 @@ class PredictionService:
             "upper": upper,
             "confidence": confidence,
             "model": model_meta["model_id"],
-            "status": "ok",
+            "status": status,
+            "training_batches": training_batches,
+            "top_factors": [],
         }
 
     def _build_similar_batches(self, current_features: dict[str, float], batch_id: int, limit: int = 5) -> list[dict[str, Any]]:
@@ -214,10 +323,11 @@ class PredictionService:
             measurements = measurements[measurements["id"] <= up_to_measurement_id]
 
         features = self._build_feature_vector(measurements)
+        quality = self._get_data_quality(measurements)
         predictions = {
-            "ph": self._predict_target("ph", features),
-            "viscosity": self._predict_target("viscosity", features),
-            "chlorides": self._predict_target("chlorides", features),
+            "ph": self._predict_target("ph", features, batch_id=batch_id, quality=quality),
+            "viscosity": self._predict_target("viscosity", features, batch_id=batch_id, quality=quality),
+            "chlorides": self._predict_target("chlorides", features, batch_id=batch_id, quality=quality),
         }
         prediction_payload = {
             "batch_id": batch_id,
@@ -225,7 +335,7 @@ class PredictionService:
                 "completed_steps": len(measurements),
                 "last_measurement_id": int(measurements["id"].iloc[-1]) if not measurements.empty else None,
             },
-            "data_quality": self._get_data_quality(measurements),
+            "data_quality": quality,
             "predictions": predictions,
             "similar_batches": self._build_similar_batches(features.iloc[0].to_dict(), batch_id),
         }
@@ -255,21 +365,22 @@ class PredictionService:
                 measurements[col] = pd.to_numeric(measurements[col], errors="coerce")
 
         features = self._build_feature_vector(measurements)
+        quality = {
+            "total_measurements": len(measurements),
+            "measurements_with_issues": 0,
+            "issues_by_field": {},
+        }
         return {
             "batch_id": None,
             "checkpoint": {
                 "completed_steps": len(measurements),
                 "last_measurement_id": None,
             },
-            "data_quality": {
-                "total_measurements": len(measurements),
-                "measurements_with_issues": 0,
-                "issues_by_field": {},
-            },
+            "data_quality": quality,
             "predictions": {
-                "ph": self._predict_target("ph", features),
-                "viscosity": self._predict_target("viscosity", features),
-                "chlorides": self._predict_target("chlorides", features),
+                "ph": self._predict_target("ph", features, quality=quality),
+                "viscosity": self._predict_target("viscosity", features, quality=quality),
+                "chlorides": self._predict_target("chlorides", features, quality=quality),
             },
             "similar_batches": [],
         }
